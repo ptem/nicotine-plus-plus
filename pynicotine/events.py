@@ -135,6 +135,9 @@ EVENT_NAMES = {
     "add-wish",
     "file-search-request-distributed",
     "file-search-request-server",
+    # When we search a file and there is a match, this event is triggered. Subscribers:
+    #  - pynicotine/search.py
+    #  - pynicotine/gtkgui/search.py
     "file-search-response",
     "remove-search",
     "remove-wish",

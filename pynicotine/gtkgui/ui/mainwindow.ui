@@ -53,6 +53,7 @@
     <property name="width-chars">5</property>
     <signal name="activate" handler="on_search"/>
   </object>
+  <!-- This is the textbox where we put the text we want to enter -->
   <object class="GtkEntry" id="search_entry">
     <property name="max-width-chars">75</property>
     <property name="placeholder-text" translatable="yes">Search term…</property>

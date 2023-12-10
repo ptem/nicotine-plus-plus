@@ -204,6 +204,7 @@ class Search:
         return search_term, search_term_without_special, room, users
 
     def do_search(self, search_term, mode, room=None, users=None, switch_page=True):
+        '''Send the search term message to the server'''
 
         # Validate search term and run it through plugins
         search_term, _search_term_without_special, room, users = self.process_search_term(
@@ -340,7 +341,9 @@ class Search:
                 delay=self.wishlist_interval, callback=self.do_wishlist_search_interval, repeat=True)
 
     def _file_search_response(self, msg):
-        """Peer code 9."""
+        """Peer code 9.
+        
+        When a "file search request" finds a match, we receive this message"""
 
         if msg.token not in slskmessages.SEARCH_TOKENS_ALLOWED:
             msg.token = None

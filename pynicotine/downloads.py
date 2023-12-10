@@ -676,7 +676,8 @@ class Downloads(Transfers):
 
     def enqueue_download(self, username, virtual_path, folder_path=None, size=0, file_attributes=None,
                          bypass_filter=False):
-
+        '''Function that is called from the UI to start the download of a file to a given path.'''
+        
         transfer = self.transfers.get(username + virtual_path)
 
         if folder_path:

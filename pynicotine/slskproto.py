@@ -648,6 +648,8 @@ class NetworkThread(Thread):
         return distrib_msg
 
     def _emit_network_message_event(self, msg):
+        '''When a message is received, the event is triggered here. For instance, when a search finds
+        a match.'''
 
         if msg is None:
             return
@@ -1665,7 +1667,9 @@ class NetworkThread(Thread):
     def _process_peer_input(self, conn_obj):
         """We have a "P" connection (p2p exchange), peer has sent us something,
         this function retrieves messages from the msg_buffer, creates message
-        objects and returns them and the rest of the msg_buffer."""
+        objects and returns them and the rest of the msg_buffer.
+        
+        For instance, when there is a search match, the message is received here."""
 
         msg_buffer = conn_obj.ibuf
         msg_buffer_mem = memoryview(msg_buffer)
@@ -2443,7 +2447,8 @@ class NetworkThread(Thread):
             self._process_distrib_input(conn_obj)
 
     def _process_queue_messages(self):
-
+        """All messages sent via socket to the server are previously enqueued in the 'self._queue' object.
+        In this function, we dequeue and process the messages we want to send to the server"""
         msgs = []
 
         while self._queue:

@@ -313,6 +313,7 @@ class Searches(IconNotebook):
             page.populate_filter_history()
 
     def file_search_response(self, msg):
+        '''Callback for a search match message'''
 
         page = self.pages.get(msg.token)
 
@@ -848,6 +849,7 @@ class Search:
         return update_ui
 
     def file_search_response(self, msg):
+        '''Updated UI with the file search match response'''
 
         user = msg.username
 
@@ -1527,7 +1529,8 @@ class Search:
             self.searches.file_properties.show()
 
     def on_download_files(self, *_args, download_folder_path=None):
-
+        '''When a file is selected to be downloaded. Either'''
+        
         for iterator in self.selected_results:
             user = self.tree_view.get_row_value(iterator, "user")
             file_path = self.tree_view.get_row_value(iterator, "file_path_data")
