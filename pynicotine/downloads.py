@@ -240,6 +240,7 @@ class Downloads(Transfers):
         virtual_path = transfer.virtual_path
         size = transfer.size
 
+        #Apply the download filters
         if not bypass_filter and config.sections["transfers"]["enablefilters"]:
             try:
                 downloadregexp = re.compile(config.sections["transfers"]["downloadregexp"], flags=re.IGNORECASE)
@@ -696,8 +697,11 @@ class Downloads(Transfers):
 
         transfer = Transfer(username, virtual_path, folder_path, size, file_attributes)
 
+        #The Transfer is added to the transfers list in Transfers base class
         self._append_transfer(transfer)
+        #
         self._enqueue_transfer(transfer, bypass_filter=bypass_filter)
+        #Just emits the event "update-download"
         self._update_transfer(transfer)
 
     def retry_download(self, transfer, bypass_filter=False):
