@@ -35,10 +35,9 @@ Once the server receives the message, we have to wait for the replies (internall
 |2|pynicotine/slskproto.py|_emit_network_message_event|
 |3|pynicotine/search.py|_file_search_response|
 |4|pynicotine/gtkgui/search.py|file_search_response|
-|5||send_message_to_peer|
-|6||_queue_network_message|
+|5|pynicotine/gtkgui/search.py|page.file_search_response|
 
-In step 2, the event `"file-search-response"` is emitted and in steps 3 and 4 the event is received and processed at the same time. The message that is received contains the following information (sensible information has been modified like username and IP)
+In step 2, the event `"file-search-response"` is emitted and callbacks in steps 3 and 4 are executed one after the other. The message that is received contains the following information (sensible information has been modified like username and IP)
 
 ![Alt text](./images/FileSearchResponse-message.png))
 
@@ -55,4 +54,6 @@ After you make a search and you want to download a file, you can either double c
 |2|pynicotine/downloads.py|enqueue_download|
 |3|pynicotine/transfers.py|_enqueue_transfer|
 
-In the `downloads.py` file, an object of type `Transfer` is created and added to the `transfers` list that is instantiated in the `pynicotine/transfers.py` class (`Transfer` class is the base class for `Downloads` and `Uploads` classes). In the end, the transfer object is also added
+In step 2, an object of type `Transfer` is created and added to the `transfers` list that is instantiated in the `pynicotine/transfers.py` class. `Transfer` class is the base class for `Downloads` and `Uploads` classes. In step 3 a `QueueUpload` message is sent to the peer. This message is used to tell a peer that an upload should be queued on their end. Once the recipient is ready to transfer the requested file, they will send a TransferRequest to us.
+
+CONTINUE HERE => `TransferRequest` message. Investigate...
