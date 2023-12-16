@@ -425,6 +425,13 @@ class Config:
                 "started_uploads": 0,
                 "completed_uploads": 0,
                 "uploaded_size": 0
+            },
+            "web_api":{
+                "enable": False,
+                "local_ip": "",
+                "local_port": 7770,
+                "remote_ip": "",
+                "remote_port": 7771
             }
         }
 
