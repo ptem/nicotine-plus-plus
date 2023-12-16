@@ -21,6 +21,7 @@ pynicotine/tests/**/*.old
 # Ignore venv files
 venv/*
 .env/
+.venv/
 
 # Ignore packaging directories and files
 *.json~
