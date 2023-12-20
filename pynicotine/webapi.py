@@ -1,11 +1,12 @@
 
-import asyncio
-import sys
-from fastapi import FastAPI
+
+from pynicotine import slskmessages
 from pynicotine.events import events
 from pynicotine.config import config
-from pynicotine.logfacility import log, Logger
+from pynicotine.logfacility import log
 from pynicotine.core import core
+
+from fastapi import FastAPI
 import uvicorn
 import threading
 import time
@@ -18,11 +19,14 @@ class WebApi:
 
         self.app = None
         self.server = None
+        self.search_list = []
+        self.current_search = None
 
         for event_name, callback in (
             ("quit", self._quit),
             ("start", self._start),
             ("file-search-response", self._file_search_response),
+            ("download-notification", self._download_notification)
         ):
             events.connect(event_name, callback)
 
@@ -48,8 +52,28 @@ class WebApi:
     
     def _file_search_response(self, msg):
 
-        print(msg)
-        
+        if msg.token not in slskmessages.SEARCH_TOKENS_ALLOWED:
+            msg.token = None
+            return
+
+        search = core.search.searches.get(msg.token)
+        if search and hasattr(search, "is_web_api_search") and search.is_web_api_search:
+            if msg.token == self.current_search:
+                print(search.term, msg)
+                self.search_list.extend(msg.list)
+            else:
+                self.search_list.clear()
+                self.search_list.extend(msg.list)
+
+                #In case a new search is performed, we remove the old search to ignore the incoming messages for that token.
+                core.search.remove_search(self.current_search)
+                self.current_search = msg.token
+
+    def _download_notification(self, status=None):
+        if status:
+            print("Download finished")
+        else:
+            print("Download just started")
 
 class AsyncUvicorn:
 
@@ -85,6 +109,18 @@ class AsyncUvicorn:
 @app.get("/")
 def read_root():
     log.add("NEW MESSAGE RECEIVED!!")
-    # core.search.do_search("david penn", "global")
+
+    core.search.do_search_from_web_api("david penn", "global")
+    
     return {"Hello": "World"}
+
+
+'''
+Data needed for a download:
+
+            "user")
+            "file_path_data")
+            "size_data")
+            "file_attributes_data")
+'''
 
