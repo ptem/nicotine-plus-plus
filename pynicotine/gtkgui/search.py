@@ -316,26 +316,28 @@ class Searches(IconNotebook):
         '''Callback for a search match message'''
 
         page = self.pages.get(msg.token)
+        search_item = core.search.searches.get(msg.token)
 
-        if page is None:
-            search_item = core.search.searches.get(msg.token)
+        #If the event is triggered by a Web API search, we filter it out so that a new page is not opened.
+        if not hasattr(search_item, "is_web_api_search"):
+            if page is None:
 
-            if search_item is None:
+                if search_item is None:
+                    return
+
+                search_term = search_item.term
+                mode = "wishlist"
+                mode_label = _("Wish")
+                page = self.create_page(msg.token, search_term, mode, mode_label, show_page=False)
+
+            # No more things to add because we've reached the result limit
+            if page.num_results_found >= page.max_limit:
+                core.search.remove_allowed_token(msg.token)
+                page.max_limited = True
+                page.update_result_counter()
                 return
 
-            search_term = search_item.term
-            mode = "wishlist"
-            mode_label = _("Wish")
-            page = self.create_page(msg.token, search_term, mode, mode_label, show_page=False)
-
-        # No more things to add because we've reached the result limit
-        if page.num_results_found >= page.max_limit:
-            core.search.remove_allowed_token(msg.token)
-            page.max_limited = True
-            page.update_result_counter()
-            return
-
-        page.file_search_response(msg)
+            page.file_search_response(msg)
 
     def update_wish_button(self, wish):
 
