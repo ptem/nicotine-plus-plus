@@ -50,11 +50,12 @@ class SearchRequest:
 
 class WebApiSearchRequest(SearchRequest):
     
-    __slots__ = {"is_web_api_search"}
+    __slots__ = {"is_web_api_search", "search_filters"}
 
-    def __init__(self, token=None, term=None, mode="global", room=None, users=None, is_ignored=False, is_web_api_search=True):
+    def __init__(self, token=None, term=None, mode="global", room=None, users=None, is_ignored=False, is_web_api_search=True, search_filters=None):
         super().__init__(token, term, mode, room, users, is_ignored)
         self.is_web_api_search = is_web_api_search
+        self.search_filters = search_filters
 
 class Search:
 
@@ -114,7 +115,7 @@ class Search:
         """Disallow parsing search result messages for a search ID."""
         slskmessages.SEARCH_TOKENS_ALLOWED.discard(token)
 
-    def add_search(self, term, mode, room=None, users=None, is_ignored=False, is_web_api_search=False):
+    def add_search(self, term, mode, room=None, users=None, is_ignored=False, is_web_api_search=False, search_filters=False):
 
         if not is_web_api_search:
             self.searches[self.token] = search = SearchRequest(
@@ -124,7 +125,7 @@ class Search:
         else:
             self.searches[self.token] = search = WebApiSearchRequest(
                 token=self.token, term=term, mode=mode, room=room, users=users,
-                is_ignored=is_ignored
+                is_ignored=is_ignored, search_filters=search_filters
             )
         self.add_allowed_token(self.token)
         return search
@@ -253,7 +254,7 @@ class Search:
         search = self.add_search(search_term, mode, room, users)
         events.emit("add-search", search.token, search, switch_page)
 
-    def do_search_from_web_api(self, search_term, mode, room=None, users=None):
+    def do_search_from_web_api(self, search_term, mode, room=None, users=None, search_filters=None):
         '''Send the search term message to the server fron the Web API'''
 
         # Validate search term and run it through plugins
@@ -275,7 +276,7 @@ class Search:
         elif mode == "user":
             self.do_peer_search(search_term, users)
 
-        self.add_search(search_term, mode, room, users, is_web_api_search=True)
+        self.add_search(search_term, mode, room, users, is_web_api_search=True, search_filters=search_filters)
 
     def do_global_search(self, text):
         core.send_message_to_server(slskmessages.FileSearch(self.token, text))

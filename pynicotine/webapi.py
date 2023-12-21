@@ -10,6 +10,7 @@ from fastapi import FastAPI
 import uvicorn
 import threading
 import time
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -106,6 +107,10 @@ class AsyncUvicorn:
 
     threading.excepthook = thread_excepthook
 
+class WebApiSearchModel(BaseModel):
+    search_term: str
+    search_filters: dict
+
 @app.get("/")
 def read_root():
     log.add("NEW MESSAGE RECEIVED!!")
@@ -113,6 +118,21 @@ def read_root():
     core.search.do_search_from_web_api("david penn", "global")
     
     return {"Hello": "World"}
+
+@app.get("/search/{search_term}")
+async def search_item(search_term):
+    print(f"{search_term}")
+    return {"item_id": search_term}
+
+@app.get("/search/global/")
+async def do_global_search(search: WebApiSearchModel):
+    print("do global search")
+    print(search.search_term)
+    print(search.search_filters)
+
+    core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters)
+    
+    return search
 
 
 '''
