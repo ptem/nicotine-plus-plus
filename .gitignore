@@ -36,6 +36,3 @@ packaging/flatpak/build-dir/
 packaging/flatpak/.flatpak-builder/
 packaging/macos/build/
 packaging/windows/build/
-
-#Visual Studio Code
-.vscode/
