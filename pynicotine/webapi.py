@@ -1,18 +1,17 @@
 
-
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
 from pynicotine import slskmessages
 from pynicotine.events import events
 from pynicotine.config import config
 from pynicotine.logfacility import log
 from pynicotine.core import core
+from pynicotine.slskmessages import FileListMessage
+from pynicotine.web_api.web_api_main import app, AsyncUvicorn
 
-from fastapi import FastAPI
-import uvicorn
-import threading
-import time
 from pydantic import BaseModel
-
-app = FastAPI()
+from threading import Thread, Event, Timer
+import time
 
 class WebApi:
 
@@ -22,6 +21,7 @@ class WebApi:
         self.server = None
         self.search_list = []
         self.current_search = None
+        self.counter = 0
 
         for event_name, callback in (
             ("quit", self._quit),
@@ -31,14 +31,16 @@ class WebApi:
         ):
             events.connect(event_name, callback)
 
+        self.send_results_thread = StoppableThread(name="SearchTimer", interval=5, target=self._sort_results)
+
+
     def _start(self):
 
         if config.sections["web_api"]["enable"]:
             log.add(f"Web API loaded")
             
             try:
-                uvicorn_config = uvicorn.Config(app,config.sections["web_api"]["local_ip"],config.sections["web_api"]["local_port"])
-                self.server = AsyncUvicorn(uvicorn_config)
+                self.server = AsyncUvicorn(config.sections["web_api"]["local_ip"], config.sections["web_api"]["local_port"])
                 self.server.start()
 
             except Exception as error:
@@ -48,10 +50,43 @@ class WebApi:
     def _quit(self):
         
         print("Stop the WebAPI")
+        self.search_list.clear()
         if self.server is not None:
             self.server.stop()
     
+    def _parse_search_response(self, msg):
+                
+        # print(search.term, msg)
+        # print(msg.token)
+
+        items_to_return = []
+
+        for _code, file_path, size, _ext, file_attributes, *_unused in msg.list:
+            # print(file_path)
+            file_path_split = file_path.split("\\")
+            file_path_split = reversed(file_path_split)
+            file_name = next(file_path_split)
+            h_quality, bitrate, h_length, length = FileListMessage.parse_audio_quality_length(size, file_attributes)
+
+            items_to_return.append(WebApiSearchResult(
+                                        token = msg.token,
+                                        user = msg.username,
+                                        ip_address = msg.addr[0],
+                                        port = msg.addr[1],
+                                        has_free_slots = msg.freeulslots,
+                                        inqueue = msg.inqueue or 1,
+                                        ulspeed = msg.ulspeed or 0, 
+                                        file_name = file_name,
+                                        file_path = file_path,
+                                        bitrate = bitrate
+                                   ))
+        
+        return items_to_return
+                
+
     def _file_search_response(self, msg):
+
+
 
         if msg.token not in slskmessages.SEARCH_TOKENS_ALLOWED:
             msg.token = None
@@ -59,16 +94,21 @@ class WebApi:
 
         search = core.search.searches.get(msg.token)
         if search and hasattr(search, "is_web_api_search") and search.is_web_api_search:
-            if msg.token == self.current_search:
-                print(search.term, msg)
-                self.search_list.extend(msg.list)
-            else:
-                self.search_list.clear()
-                self.search_list.extend(msg.list)
+            if self.counter == 0 and not self.send_results_thread.is_alive():
+                self.send_results_thread.start()
+                self.counter += 1
+            
+            if self.current_search is None or msg.token == self.current_search:
+                self.search_list.extend(self._parse_search_response(msg))
 
+            else:
                 #In case a new search is performed, we remove the old search to ignore the incoming messages for that token.
                 core.search.remove_search(self.current_search)
                 self.current_search = msg.token
+
+                self.search_list.clear()
+                self.search_list.extend(self._parse_search_response(msg))
+
 
     def _download_notification(self, status=None):
         if status:
@@ -76,71 +116,37 @@ class WebApi:
         else:
             print("Download just started")
 
-class AsyncUvicorn:
+    def _sort_results():
+        print("hello")
+        print("world!")
+        
 
-    exception_caught = False
 
-    def __init__(self, config: uvicorn.Config):
-        self.server = uvicorn.Server(config)
-        self.thread = threading.Thread(daemon=True, target=self.__run_server)
+class WebApiSearchResult(BaseModel):
+    token: int
+    user: str
+    ip_address: str
+    port: int
+    has_free_slots: bool
+    inqueue: int
+    ulspeed: int
+    file_name: str
+    file_path: str
+    bitrate: int
 
-    def __run_server(self): 
-        try:
-            if not self.server.started:
-                self.server.run()
-        except SystemExit:
-            print("Error while starting the Web API server.")
-            time.sleep(5)
-            self.__run_server()
 
-    def start(self):
-            self.thread.start()
+class StoppableThread(Thread):
+    """Thread class with a stop() method. The thread itself has to check
+    regularly for the stopped() condition."""
 
+    def __init__(self, name, target, interval):
+        super().__init__(name=name, target=target)
+        self._stop_event = Event()
+        self.interval = interval
+        self.target = target
+        
     def stop(self):
-        if self.thread.is_alive():
-            self.server.should_exit = True
-            while self.thread.is_alive():
-                continue
-    
-    def thread_excepthook(args):
-        print(f"EXCEPTION! {args[1]}")
+        self._stop_event.set()
 
-    threading.excepthook = thread_excepthook
-
-class WebApiSearchModel(BaseModel):
-    search_term: str
-    search_filters: dict
-
-@app.get("/")
-def read_root():
-    log.add("NEW MESSAGE RECEIVED!!")
-
-    core.search.do_search_from_web_api("david penn", "global")
-    
-    return {"Hello": "World"}
-
-@app.get("/search/{search_term}")
-async def search_item(search_term):
-    print(f"{search_term}")
-    return {"item_id": search_term}
-
-@app.get("/search/global/")
-async def do_global_search(search: WebApiSearchModel):
-    print("do global search")
-    print(search.search_term)
-    print(search.search_filters)
-
-    core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters)
-    
-    return search
-
-
-'''
-Data needed for a download:
-
-            "user")
-            "file_path_data")
-            "size_data")
-            "file_attributes_data")
-'''
-
+    def stopped(self):
+        return self._stop_event.is_set()
