@@ -65,9 +65,9 @@ async def search_item(search_term):
 
 @app.get("/search/global/")
 async def do_global_search(search: WebApiSearchModel):
-    print("do global search")
-    print(search.search_term)
-    print(search.search_filters)
+    # print("do global search")
+    # print(search.search_term)
+    # print(search.search_filters)
 
     core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters)
     

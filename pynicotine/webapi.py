@@ -31,7 +31,8 @@ class WebApi:
         ):
             events.connect(event_name, callback)
 
-        self.send_results_thread = StoppableThread(name="SearchTimer", interval=5, target=self._sort_results)
+        self.send_results_thread = StoppableThread(name="SearchTimer", interval=1.5, target=self._sort_results)
+        self.send_results_thread.start()
 
 
     def _start(self):
@@ -83,10 +84,7 @@ class WebApi:
         
         return items_to_return
                 
-
     def _file_search_response(self, msg):
-
-
 
         if msg.token not in slskmessages.SEARCH_TOKENS_ALLOWED:
             msg.token = None
@@ -94,20 +92,27 @@ class WebApi:
 
         search = core.search.searches.get(msg.token)
         if search and hasattr(search, "is_web_api_search") and search.is_web_api_search:
-            if self.counter == 0 and not self.send_results_thread.is_alive():
-                self.send_results_thread.start()
-                self.counter += 1
+            # if self.counter == 0 and self.send_results_thread.stopped():
+            #     self.send_results_thread.restart()
+            #     self.counter += 1
             
-            if self.current_search is None or msg.token == self.current_search:
+            if self.current_search is None:
+                self.send_results_thread.restart()
+                self.current_search = msg.token
+                log.add("New search arrived for the first time.")
+            
+            if msg.token == self.current_search:
                 self.search_list.extend(self._parse_search_response(msg))
-
             else:
                 #In case a new search is performed, we remove the old search to ignore the incoming messages for that token.
                 core.search.remove_search(self.current_search)
                 self.current_search = msg.token
+                self.counter = 0
+                self.send_results_thread.restart()
 
                 self.search_list.clear()
                 self.search_list.extend(self._parse_search_response(msg))
+                log.add("New search arrived.")
 
 
     def _download_notification(self, status=None):
@@ -116,9 +121,9 @@ class WebApi:
         else:
             print("Download just started")
 
-    def _sort_results():
-        print("hello")
-        print("world!")
+    def _sort_results(self):
+        log.add(f"Sort results. Received {len(self.search_list)}")
+        self.send_results_thread.stop()
         
 
 
@@ -137,7 +142,7 @@ class WebApiSearchResult(BaseModel):
 
 class StoppableThread(Thread):
     """Thread class with a stop() method. The thread itself has to check
-    regularly for the stopped() condition."""
+        regularly for the stopped() condition."""
 
     def __init__(self, name, target, interval):
         super().__init__(name=name, target=target)
@@ -146,7 +151,21 @@ class StoppableThread(Thread):
         self.target = target
         
     def stop(self):
+        # print("Thread stopped")
         self._stop_event.set()
 
     def stopped(self):
         return self._stop_event.is_set()
+    
+    def restart(self):
+        # print("Thread restarted.")
+        self._stop_event.clear()
+    
+    def run(self):
+
+        while True:
+            time.sleep(0.5)
+            if not self.stopped():
+                time.sleep(self.interval)
+                self.target(*self._args, **self._kwargs)
+
