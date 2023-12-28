@@ -10,18 +10,17 @@ from pynicotine.slskmessages import FileListMessage
 from pynicotine.web_api.web_api_main import app, AsyncUvicorn
 
 from pydantic import BaseModel
-from threading import Thread, Event, Timer
+from threading import Timer, active_count, enumerate
 import time
+import json
+import pathlib
 
 class WebApi:
 
     def __init__(self):
 
-        self.app = None
-        self.server = None
-        self.search_list = []
-        self.current_search = None
-        self.counter = 0
+        self.api_server = None
+        self.active_searches = {}
 
         for event_name, callback in (
             ("quit", self._quit),
@@ -31,9 +30,6 @@ class WebApi:
         ):
             events.connect(event_name, callback)
 
-        self.send_results_thread = StoppableThread(name="SearchTimer", interval=1.5, target=self._sort_results)
-        self.send_results_thread.start()
-
 
     def _start(self):
 
@@ -41,19 +37,19 @@ class WebApi:
             log.add(f"Web API loaded")
             
             try:
-                self.server = AsyncUvicorn(config.sections["web_api"]["local_ip"], config.sections["web_api"]["local_port"])
-                self.server.start()
+                self.api_server = AsyncUvicorn(config.sections["web_api"]["local_ip"], config.sections["web_api"]["local_port"])
+                self.api_server.start()
 
             except Exception as error:
                 print(f"Exception when starting the Web API Server: {error}")
-                self.server.stop()
+                self.api_server.stop()
 
     def _quit(self):
         
         print("Stop the WebAPI")
         self.search_list.clear()
-        if self.server is not None:
-            self.server.stop()
+        if self.api_server is not None:
+            self.api_server.stop()
     
     def _parse_search_response(self, msg):
                 
@@ -67,6 +63,7 @@ class WebApi:
             file_path_split = file_path.split("\\")
             file_path_split = reversed(file_path_split)
             file_name = next(file_path_split)
+            file_extension = pathlib.Path(file_name).suffix[1:]
             h_quality, bitrate, h_length, length = FileListMessage.parse_audio_quality_length(size, file_attributes)
 
             items_to_return.append(WebApiSearchResult(
@@ -78,6 +75,7 @@ class WebApi:
                                         inqueue = msg.inqueue or 1,
                                         ulspeed = msg.ulspeed or 0, 
                                         file_name = file_name,
+                                        file_extension=file_extension,
                                         file_path = file_path,
                                         bitrate = bitrate
                                    ))
@@ -92,27 +90,13 @@ class WebApi:
 
         search = core.search.searches.get(msg.token)
         if search and hasattr(search, "is_web_api_search") and search.is_web_api_search:
-            # if self.counter == 0 and self.send_results_thread.stopped():
-            #     self.send_results_thread.restart()
-            #     self.counter += 1
             
-            if self.current_search is None:
-                self.send_results_thread.restart()
-                self.current_search = msg.token
-                log.add("New search arrived for the first time.")
-            
-            if msg.token == self.current_search:
-                self.search_list.extend(self._parse_search_response(msg))
+            if not msg.token in self.active_searches:
+                self.active_searches[msg.token] = self._parse_search_response(msg)
+                t = Timer(2.0,self._search_timeout, args=[msg.token, search.search_filters])
+                t.start()
             else:
-                #In case a new search is performed, we remove the old search to ignore the incoming messages for that token.
-                core.search.remove_search(self.current_search)
-                self.current_search = msg.token
-                self.counter = 0
-                self.send_results_thread.restart()
-
-                self.search_list.clear()
-                self.search_list.extend(self._parse_search_response(msg))
-                log.add("New search arrived.")
+                self.active_searches[msg.token].extend(self._parse_search_response(msg))
 
 
     def _download_notification(self, status=None):
@@ -121,12 +105,24 @@ class WebApi:
         else:
             print("Download just started")
 
-    def _sort_results(self):
-        log.add(f"Sort results. Received {len(self.search_list)}")
-        self.send_results_thread.stop()
+    
+    def _search_timeout(self, token, search_filters):
+        """Callback function that is triggered after the timeout in seconds elapsed"""
         
+        #First thing is to remove the search from the core so that we do not process any other response for that token
+        core.search.remove_search(token)
 
+        for item in self.active_searches[token]:
+            print(item.json())
 
+        log.add(f"Sort results. Received {len(self.active_searches[token])}")
+        log.add(f"Total searches: {len(self.active_searches)}")
+        # print(enumerate())
+        print(f"Total number of threads: {active_count()}")
+        if token in self.active_searches:
+            del self.active_searches[token]
+
+    
 class WebApiSearchResult(BaseModel):
     token: int
     user: str
@@ -136,36 +132,6 @@ class WebApiSearchResult(BaseModel):
     inqueue: int
     ulspeed: int
     file_name: str
+    file_extension: str
     file_path: str
     bitrate: int
-
-
-class StoppableThread(Thread):
-    """Thread class with a stop() method. The thread itself has to check
-        regularly for the stopped() condition."""
-
-    def __init__(self, name, target, interval):
-        super().__init__(name=name, target=target)
-        self._stop_event = Event()
-        self.interval = interval
-        self.target = target
-        
-    def stop(self):
-        # print("Thread stopped")
-        self._stop_event.set()
-
-    def stopped(self):
-        return self._stop_event.is_set()
-    
-    def restart(self):
-        # print("Thread restarted.")
-        self._stop_event.clear()
-    
-    def run(self):
-
-        while True:
-            time.sleep(0.5)
-            if not self.stopped():
-                time.sleep(self.interval)
-                self.target(*self._args, **self._kwargs)
-
