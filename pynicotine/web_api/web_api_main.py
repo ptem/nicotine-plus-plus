@@ -1,5 +1,6 @@
 
 
+from typing import Optional
 from pynicotine.core import core
 from pynicotine.logfacility import log
 
@@ -9,10 +10,10 @@ import uvicorn
 import threading
 import time
 
-
 class WebApiSearchModel(BaseModel):
     search_term: str
-    search_filters: dict
+    search_filters: Optional[dict] = None
+    smart_filters: Optional[bool] = None
 
 class AsyncUvicorn:
 
@@ -21,7 +22,7 @@ class AsyncUvicorn:
     def __init__(self, local_ip: str, local_port: int):
         uvicorn_config = uvicorn.Config(app, local_ip, local_port)
         self.server = uvicorn.Server(uvicorn_config)
-        self.thread = threading.Thread(daemon=True, target=self.__run_server)
+        self.thread = threading.Thread(name="WebApiThread", daemon=True, target=self.__run_server)
 
     def __run_server(self): 
         try:
@@ -46,8 +47,6 @@ class AsyncUvicorn:
 
     threading.excepthook = thread_excepthook
 
-
-
 app = FastAPI()
 
 @app.get("/")
@@ -58,18 +57,10 @@ def read_root():
     
     return {"Hello": "World"}
 
-@app.get("/search/{search_term}")
-async def search_item(search_term):
-    print(f"{search_term}")
-    return {"item_id": search_term}
-
 @app.get("/search/global/")
-async def do_global_search(search: WebApiSearchModel):
-    # print("do global search")
-    # print(search.search_term)
-    # print(search.search_filters)
+async def do_web_api_global_search(search: WebApiSearchModel):
 
-    core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters)
+    core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
     
     return search
 

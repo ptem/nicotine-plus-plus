@@ -1,19 +1,18 @@
 
-from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+
+
 from pynicotine import slskmessages
 from pynicotine.events import events
 from pynicotine.config import config
 from pynicotine.logfacility import log
 from pynicotine.core import core
 from pynicotine.slskmessages import FileListMessage
-from pynicotine.web_api.web_api_main import app, AsyncUvicorn
+from pynicotine.web_api.web_api_main import AsyncUvicorn
 
 from pydantic import BaseModel
-from threading import Timer, active_count, enumerate
-import time
-import json
+from threading import Timer
 import pathlib
+from difflib import SequenceMatcher
 
 class WebApi:
 
@@ -29,7 +28,6 @@ class WebApi:
             ("download-notification", self._download_notification)
         ):
             events.connect(event_name, callback)
-
 
     def _start(self):
 
@@ -51,20 +49,24 @@ class WebApi:
         if self.api_server is not None:
             self.api_server.stop()
     
-    def _parse_search_response(self, msg):
-                
-        # print(search.term, msg)
-        # print(msg.token)
+    def _parse_search_response(self, msg, search):
+
+        def get_string_similarity(a, b):
+            return SequenceMatcher(None, a, b).ratio()
 
         items_to_return = []
 
         for _code, file_path, size, _ext, file_attributes, *_unused in msg.list:
-            # print(file_path)
             file_path_split = file_path.split("\\")
             file_path_split = reversed(file_path_split)
             file_name = next(file_path_split)
             file_extension = pathlib.Path(file_name).suffix[1:]
             h_quality, bitrate, h_length, length = FileListMessage.parse_audio_quality_length(size, file_attributes)
+            if msg.freeulslots:
+                inqueue = 0
+            else:
+                inqueue = msg.inqueue or 1  # Ensure value is always >= 1
+            search_similarity = get_string_similarity(search.term, file_name)
 
             items_to_return.append(WebApiSearchResult(
                                         token = msg.token,
@@ -72,12 +74,13 @@ class WebApi:
                                         ip_address = msg.addr[0],
                                         port = msg.addr[1],
                                         has_free_slots = msg.freeulslots,
-                                        inqueue = msg.inqueue or 1,
+                                        inqueue = inqueue,
                                         ulspeed = msg.ulspeed or 0, 
                                         file_name = file_name,
                                         file_extension=file_extension,
                                         file_path = file_path,
-                                        bitrate = bitrate
+                                        bitrate = bitrate,
+                                        search_similarity = search_similarity
                                    ))
         
         return items_to_return
@@ -88,16 +91,14 @@ class WebApi:
             msg.token = None
             return
 
-        search = core.search.searches.get(msg.token)
-        if search and hasattr(search, "is_web_api_search") and search.is_web_api_search:
-            
+        search = core.search.web_api_searches.get(msg.token)
+        if search:
             if not msg.token in self.active_searches:
-                self.active_searches[msg.token] = self._parse_search_response(msg)
-                t = Timer(2.0,self._search_timeout, args=[msg.token, search.search_filters])
+                self.active_searches[msg.token] = self._parse_search_response(msg, search)
+                t = Timer(3.0,self._search_timeout, args=[search])
                 t.start()
             else:
-                self.active_searches[msg.token].extend(self._parse_search_response(msg))
-
+                self.active_searches[msg.token].extend(self._parse_search_response(msg, search))
 
     def _download_notification(self, status=None):
         if status:
@@ -106,23 +107,57 @@ class WebApi:
             print("Download just started")
 
     
-    def _search_timeout(self, token, search_filters):
-        """Callback function that is triggered after the timeout in seconds elapsed"""
+    def _search_timeout(self, search):
+        """Callback function that is triggered after the timeout elapses"""
+
+        if not search.token in self.active_searches:
+            return
         
         #First thing is to remove the search from the core so that we do not process any other response for that token
-        core.search.remove_search(token)
+        core.search.remove_web_api_search(search.token)
+        #Delete the search from dict
+        deleted_search = self.active_searches.pop(search.token)
 
-        for item in self.active_searches[token]:
-            print(item.json())
+        #filter the items
+        filtered_list = [search_result for search_result in deleted_search if self._apply_filters(search_result, search.search_filters)]
 
-        log.add(f"Sort results. Received {len(self.active_searches[token])}")
-        log.add(f"Total searches: {len(self.active_searches)}")
-        # print(enumerate())
-        print(f"Total number of threads: {active_count()}")
-        if token in self.active_searches:
-            del self.active_searches[token]
+        #Send the results based on the input given by the client in the api request
+        free_slots_list = []
+        if search.smart_filters:
+            #Filter first by free slots
+            free_slots_list = [file for file in filtered_list if file.has_free_slots]
+            
+            if len(free_slots_list) > 0:
+                #Then order by upload speed
+                free_slots_list.sort(key=lambda x: (x.search_similarity, x.ulspeed), reverse=True)
+        
+        print(f"=================================")
+        print(f"Original: {len(deleted_search)}")
+        print(f"Filtered: {len(filtered_list)}") 
+        print(f"Free slots: {len(free_slots_list)}")
+        print(f"=================================")
 
-    
+        for track in free_slots_list[:10]:
+            print(track.file_name)
+
+        
+    def _apply_filters(self, search, search_filters) -> bool:
+
+        result = None
+        if search_filters is not None:
+            for filter in search_filters:
+                if hasattr(search,filter):
+                    if getattr(search,filter) == search_filters[filter]:
+                        result = True
+                    else:
+                        return False
+                else:
+                    return False
+        else:
+            return True
+
+        return result
+
 class WebApiSearchResult(BaseModel):
     token: int
     user: str
@@ -135,3 +170,4 @@ class WebApiSearchResult(BaseModel):
     file_extension: str
     file_path: str
     bitrate: int
+    search_similarity: float
