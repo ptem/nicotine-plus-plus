@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from threading import Timer
 import pathlib
 from difflib import SequenceMatcher
+import requests
 
 class WebApi:
 
@@ -95,7 +96,7 @@ class WebApi:
         if search:
             if not msg.token in self.active_searches:
                 self.active_searches[msg.token] = self._parse_search_response(msg, search)
-                t = Timer(3.0,self._search_timeout, args=[search])
+                t = Timer(2.0,self._search_timeout, args=[search])
                 t.start()
             else:
                 self.active_searches[msg.token].extend(self._parse_search_response(msg, search))
@@ -130,15 +131,27 @@ class WebApi:
             if len(free_slots_list) > 0:
                 #Then order by upload speed
                 free_slots_list.sort(key=lambda x: (x.search_similarity, x.ulspeed), reverse=True)
-        
+
+            if len(free_slots_list) > 0:
+                for track in free_slots_list[:10]:
+                    print(track.file_name)
+                    response = requests.get(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/response/search/global')
+                    # print(response.content)
+
+        else:
+            if len(filtered_list) > 0:
+                for track in filtered_list:
+                    print(track.file_name)
+                    response = requests.get(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/response/search/global')
+                    # print(response.content)
+
+
+
         print(f"=================================")
         print(f"Original: {len(deleted_search)}")
         print(f"Filtered: {len(filtered_list)}") 
         print(f"Free slots: {len(free_slots_list)}")
         print(f"=================================")
-
-        for track in free_slots_list[:10]:
-            print(track.file_name)
 
         
     def _apply_filters(self, search, search_filters) -> bool:

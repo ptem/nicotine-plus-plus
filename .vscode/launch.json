@@ -23,6 +23,14 @@
             "args": [
                 "--headless"
             ]
+        },
+        {
+            "name": "WebApi",
+            "type": "python",
+            "request": "launch",
+            "program": "./web_api_client/web_api_client_main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }
