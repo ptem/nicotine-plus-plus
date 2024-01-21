@@ -32,6 +32,11 @@ class WebApiSearchResult(BaseModel):
     search_similarity: float
     file_attributes: Optional[dict] = None
 
+class FileDownloaded(BaseModel):
+    user: str
+    virtual_file_path: str
+    file_download_file: str
+
 class WebApi:
 
     def __init__(self):
@@ -128,7 +133,9 @@ class WebApi:
 
     def _download_notification_web_api(self, username, virtual_path, download_file_path):
         
+        file = FileDownloaded(user=username, virtual_file_path=virtual_path, file_download_file=download_file_path)
         print(f"Download finished in: {download_file_path}")
+        response = self.session.post(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/download/notification', json=file.model_dump())
 
 
     def _search_timeout(self, search):
