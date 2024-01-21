@@ -14,6 +14,23 @@ from threading import Timer
 import pathlib
 from difflib import SequenceMatcher
 import requests
+import time
+from typing import Optional
+
+class WebApiSearchResult(BaseModel):
+    token: int
+    user: str
+    ip_address: str
+    port: int
+    has_free_slots: bool
+    inqueue: int
+    ulspeed: int
+    file_name: str
+    file_extension: str
+    file_path: str
+    bitrate: int
+    search_similarity: float
+    file_attributes: Optional[dict] = None
 
 class WebApi:
 
@@ -21,12 +38,14 @@ class WebApi:
 
         self.api_server = None
         self.active_searches = {}
+        self.session = requests.Session()
 
         for event_name, callback in (
             ("quit", self._quit),
             ("start", self._start),
             ("file-search-response", self._file_search_response),
-            ("download-notification", self._download_notification)
+            ("download-notification", self._download_notification),
+            ("download-notification-web-api", self._download_notification_web_api)
         ):
             events.connect(event_name, callback)
 
@@ -46,7 +65,6 @@ class WebApi:
     def _quit(self):
         
         print("Stop the WebAPI")
-        self.search_list.clear()
         if self.api_server is not None:
             self.api_server.stop()
     
@@ -81,7 +99,8 @@ class WebApi:
                                         file_extension=file_extension,
                                         file_path = file_path,
                                         bitrate = bitrate,
-                                        search_similarity = search_similarity
+                                        search_similarity = search_similarity,
+                                        file_attributes=file_attributes
                                    ))
         
         return items_to_return
@@ -107,9 +126,17 @@ class WebApi:
         else:
             print("Download just started")
 
-    
+    def _download_notification_web_api(self, username, virtual_path, download_file_path):
+        
+        print(f"Download finished in: {download_file_path}")
+
+
     def _search_timeout(self, search):
         """Callback function that is triggered after the timeout elapses"""
+
+        def _post_search_result(self, track: WebApiSearchResult):
+            response = self.session.post(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/response/search/global', json=track.model_dump())
+            return response
 
         if not search.token in self.active_searches:
             return
@@ -131,29 +158,29 @@ class WebApi:
             if len(free_slots_list) > 0:
                 #Then order by upload speed
                 free_slots_list.sort(key=lambda x: (x.search_similarity, x.ulspeed), reverse=True)
-
+            start = time.time()
             if len(free_slots_list) > 0:
                 for track in free_slots_list[:10]:
                     print(track.file_name)
-                    response = requests.get(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/response/search/global')
-                    # print(response.content)
+                    _post_search_result(self, track)
+            end = time.time()    
 
         else:
+            start = time.time()
             if len(filtered_list) > 0:
                 for track in filtered_list:
                     print(track.file_name)
-                    response = requests.get(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/response/search/global')
-                    # print(response.content)
-
+                    _post_search_result(self, track)
+            end = time.time()
 
 
         print(f"=================================")
         print(f"Original: {len(deleted_search)}")
         print(f"Filtered: {len(filtered_list)}") 
         print(f"Free slots: {len(free_slots_list)}")
+        print(f"Exec. time: {end - start}")
         print(f"=================================")
 
-        
     def _apply_filters(self, search, search_filters) -> bool:
 
         result = None
@@ -171,16 +198,3 @@ class WebApi:
 
         return result
 
-class WebApiSearchResult(BaseModel):
-    token: int
-    user: str
-    ip_address: str
-    port: int
-    has_free_slots: bool
-    inqueue: int
-    ulspeed: int
-    file_name: str
-    file_extension: str
-    file_path: str
-    bitrate: int
-    search_similarity: float

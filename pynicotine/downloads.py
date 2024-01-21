@@ -422,6 +422,7 @@ class Downloads(Transfers):
 
         finished = True
         events.emit("download-notification", finished)
+        events.emit("download-notification-web-api", transfer.username, transfer.virtual_path, download_file_path)
 
         # Attempt to autoclear this download, if configured
         if not self._auto_clear_transfer(transfer):

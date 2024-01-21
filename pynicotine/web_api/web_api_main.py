@@ -15,6 +15,12 @@ class WebApiSearchModel(BaseModel):
     search_filters: Optional[dict] = None
     smart_filters: Optional[bool] = None
 
+class FileToDownload(BaseModel):
+    file_owner: str
+    file_path: str
+    file_size: int
+    file_attributes: Optional[dict] = None
+
 class AsyncUvicorn:
 
     exception_caught = False
@@ -57,19 +63,23 @@ def read_root():
     
     return {"Hello": "World"}
 
-@app.get("/search/global/")
+@app.get("/search/global")
 async def do_web_api_global_search(search: WebApiSearchModel):
 
     core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
     
     return search
 
+@app.get("/download")
+async def download_file(file: FileToDownload):
+    core.downloads.enqueue_download(file.file_owner, file.file_path, folder_path=None, size=file.file_size, file_attributes=file.file_attributes)
+    return "hello world"
 
 '''
     Data needed for a download:
 
-                "user")
-                "file_path_data")
-                "size_data")k
-                "file_attributes_data")
+                "user") => 'merciero23'
+                "file_path_data") => '@@xpgbc\\TEMAS COMPARTIDOS 2\\mp3\\4635732_Love___Happiness__Yemaya___Ochun__Feat__India_David_Penn_Vocal_Mix.mp3'
+                "size_data") => 18527131
+                "file_attributes_data") => 
 '''
