@@ -28,12 +28,12 @@ class FileDownloaded(BaseModel):
 app = FastAPI()
 
 @app.post("/response/search/global")
-async def root(search_result: WebApiSearchResult):
+async def do_search(search_result: WebApiSearchResult):
     print(search_result.file_name)
     return search_result
 
 @app.post("/download/notification")
-async def root(download: FileDownloaded):
+async def download_notification(download: FileDownloaded):
     print(download.file_download_file)
     return download
 

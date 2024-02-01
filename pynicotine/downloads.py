@@ -21,6 +21,7 @@ import os.path
 import re
 import shutil
 import time
+import json
 
 from collections import defaultdict
 from locale import strxfrm
@@ -231,8 +232,9 @@ class Downloads(Transfers):
     def _append_transfer(self, transfer):
         self.transfers[transfer.username + transfer.virtual_path] = transfer
 
-    def _update_transfer(self, transfer, update_parent=True):
-        events.emit("update-download", transfer, update_parent)
+    #@pachiclana - To be removed
+    # def _update_transfer(self, transfer, update_parent=True):
+    #     events.emit("update-download", transfer, update_parent)
 
     def _enqueue_transfer(self, transfer, bypass_filter=False):
 
@@ -678,7 +680,7 @@ class Downloads(Transfers):
 
     def enqueue_download(self, username, virtual_path, folder_path=None, size=0, file_attributes=None,
                          bypass_filter=False):
-        '''Function that is called from the UI to start the download of a file to a given path.'''
+        '''Function that is called from the UI or Web Api to start the download of a file to a given path.'''
         
         transfer = self.transfers.get(username + virtual_path)
 
@@ -698,9 +700,9 @@ class Downloads(Transfers):
 
         transfer = Transfer(username, virtual_path, folder_path, size, file_attributes)
 
-        #The Transfer is added to the transfers list in Transfers base class
+        #The Transfer is added to the 'transfers' list in the base class
         self._append_transfer(transfer)
-        #
+        #If all the conditions are met, it is to the 'queued_transfers' list in the base class
         self._enqueue_transfer(transfer, bypass_filter=bypass_filter)
         #Just emits the event "update-download"
         self._update_transfer(transfer)
@@ -1237,3 +1239,6 @@ class Downloads(Transfers):
 
         download.queue_position = msg.place
         self._update_transfer(download, update_parent=False)
+
+    def get_transfer_list(self) -> list:
+        return list(self.transfers.values())

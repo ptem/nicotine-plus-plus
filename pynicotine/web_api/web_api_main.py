@@ -21,6 +21,15 @@ class FileToDownload(BaseModel):
     file_size: int
     file_attributes: Optional[dict] = None
 
+class TransferModel(BaseModel):
+    username: str
+    virtual_path: str
+    download_path: str
+    status: str
+    size: int
+    current_byte_offset: Optional[int] = None
+    file_attributes: Optional[dict] = None
+
 class AsyncUvicorn:
 
     exception_caught = False
@@ -58,22 +67,33 @@ app = FastAPI()
 @app.get("/")
 def read_root():
     log.add("NEW MESSAGE RECEIVED!!")
-
     core.search.do_search_from_web_api("david penn", "global")
-    
     return {"Hello": "World"}
 
 @app.get("/search/global")
 async def do_web_api_global_search(search: WebApiSearchModel):
-
     core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
-    
     return search
 
 @app.get("/download")
 async def download_file(file: FileToDownload):
     core.downloads.enqueue_download(file.file_owner, file.file_path, folder_path=None, size=file.file_size, file_attributes=file.file_attributes)
-    return "hello world"
+    return f"Download enqueued: {file.file_path}"
+
+@app.get("/download/getdownloads")
+async def get_dowloads():
+    core_transfers = core.downloads.get_transfer_list()
+    list_to_send = []
+    for transfer in core_transfers:
+        list_to_send.append(TransferModel(
+                                username=transfer.username, 
+                                virtual_path=transfer.virtual_path,
+                                download_path=transfer.folder_path,
+                                status=transfer.status,
+                                size=transfer.size,
+                                current_byte_offset=transfer.current_byte_offset,
+                                file_attributes=transfer.file_attributes))
+    return list_to_send
 
 '''
     Data needed for a download:
