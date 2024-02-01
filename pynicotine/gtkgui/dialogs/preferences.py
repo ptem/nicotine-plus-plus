@@ -2436,6 +2436,55 @@ class UrlHandlersPage:
         self.file_manager_combobox.set_text(default_file_manager)
 
 
+class WebApiPage:
+
+    def __init__(self, application):
+
+        (
+            #The objects here must be in alphabetical order so that they are loaded properly!!
+            self.container,
+            self.web_api_local_ip,
+            self.web_api_local_port,
+            self.web_api_remote_ip,
+            self.web_api_remote_port,
+            self.web_api_toggle
+            
+        ) = ui.load(scope=self, path="settings/webapi.ui")
+
+        self.application = application
+        # self.web_api_enabled = False
+
+        self.options = {
+            "web_api": {
+                "enable": self.web_api_toggle,
+                "local_ip": self.web_api_local_ip,
+                "local_port": self.web_api_local_port,
+                "remote_ip": self.web_api_remote_ip,
+                "remote_port": self.web_api_remote_port
+            }
+        }
+
+    def set_settings(self):
+
+        self.application.preferences.set_widgets_data(self.options)
+
+    def get_settings(self):
+
+        return {
+            "web_api": {
+                "enable": self.web_api_toggle.get_active(),
+                "local_ip": self.web_api_local_ip.get_text(),
+                "local_port": self.web_api_local_port.get_value_as_int(),
+                "remote_ip": self.web_api_remote_ip.get_text(),
+                "remote_port": self.web_api_remote_port.get_value_as_int()
+            }
+        }
+    
+    def on_toggle_web_api(self, *_args):
+        # self.web_api_enabled = self.web_api_toggle.get_active()
+        print("toggle the web api")
+
+
 class NowPlayingPage:
 
     def __init__(self, application):
@@ -2789,7 +2838,8 @@ class Preferences(Dialog):
         ("banned-users", BannedUsersPage, _("Banned Users"), "action-unavailable-symbolic"),
         ("ignored-users", IgnoredUsersPage, _("Ignored Users"), "microphone-sensitivity-muted-symbolic"),
         ("plugins", PluginsPage, _("Plugins"), "list-add-symbolic"),
-        ("url-handlers", UrlHandlersPage, _("URL Handlers"), "insert-link-symbolic")
+        ("url-handlers", UrlHandlersPage, _("URL Handlers"), "insert-link-symbolic"),
+        ("web-api", WebApiPage, _("Web API"), "web-browser-symbolic")
     ]
 
     def __init__(self, application):
@@ -2957,7 +3007,8 @@ class Preferences(Dialog):
             "players": {},
             "words": {},
             "notifications": {},
-            "plugins": {}
+            "plugins": {},
+            "web_api": {}
         }
 
         for page in self.pages.values():

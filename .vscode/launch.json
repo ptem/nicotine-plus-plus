@@ -1,0 +1,36 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "Nicotine GUI",
+            "type": "python",
+            "request": "launch",
+            "program": "nicotine",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Nicotine --headless",
+            "type": "python",
+            "request": "launch",
+            "program": "nicotine",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--headless"
+            ]
+        },
+        {
+            "name": "WebApi",
+            "type": "python",
+            "request": "launch",
+            "program": "./web_api_client/web_api_client_main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

@@ -57,3 +57,9 @@ After you make a search and you want to download a file, you can either double c
 In step 2, an object of type `Transfer` is created and added to the `transfers` list that is instantiated in the `pynicotine/transfers.py` class. `Transfer` class is the base class for `Downloads` and `Uploads` classes. In step 3 a `QueueUpload` message is sent to the peer. This message is used to tell a peer that an upload should be queued on their end. Once the recipient is ready to transfer the requested file, they will send a TransferRequest to us.
 
 CONTINUE HERE => `TransferRequest` message. Investigate...
+
+### Download started/finished
+
+downloads.py => _file_transfer_init => events.emit("download-notification")
+downloads.py => _finish_transfer => events.emit("download-notification", finished)
+

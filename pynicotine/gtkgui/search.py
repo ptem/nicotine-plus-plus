@@ -313,7 +313,6 @@ class Searches(IconNotebook):
             page.populate_filter_history()
 
     def file_search_response(self, msg):
-        '''Callback for a search match message'''
 
         page = self.pages.get(msg.token)
 
@@ -481,6 +480,7 @@ class Search:
             container=self.filter_country_container, has_entry=True, enable_arrow_keys=False,
             entry=self.filter_country_entry, item_selected_callback=self.on_refilter)
 
+        #Grid where the search matches are displayed
         self.tree_view = TreeView(
             self.window, parent=self.tree_container, name="file_search",
             multi_select=True, activate_row_callback=self.on_row_activated, focus_in_callback=self.on_refilter,
@@ -918,6 +918,8 @@ class Search:
         return True
 
     def add_row_to_model(self, row):
+        '''Add new line to the search tab with new results to show'''
+
         (user, flag, h_speed, h_queue, folder_path, _unused, _unused, _unused, _unused,
             _unused, country_code, speed, queue, _unused, _unused, _unused, file_path, has_free_slots,
             _unused, row_id) = row
