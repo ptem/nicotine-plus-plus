@@ -179,7 +179,7 @@ EVENT_NAMES = {
     "queue-upload",
     "transfer-request",
     "transfer-response",
-    # "update-download",
+    "update-download",
     "update-download-limits",
     "update-upload",
     "update-upload-limits",

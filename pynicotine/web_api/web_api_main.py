@@ -22,12 +22,14 @@ class FileToDownload(BaseModel):
     file_attributes: Optional[dict] = None
 
 class TransferModel(BaseModel):
+      
     username: str
     virtual_path: str
     download_path: str
     status: str
     size: int
     current_byte_offset: Optional[int] = None
+    download_percentage: Optional[str] = None
     file_attributes: Optional[dict] = None
 
 class AsyncUvicorn:
@@ -92,8 +94,15 @@ async def get_dowloads():
                                 status=transfer.status,
                                 size=transfer.size,
                                 current_byte_offset=transfer.current_byte_offset,
+                                download_percentage=f"{transfer.current_byte_offset*100/transfer.size:.2f}%" if transfer.current_byte_offset else "0%",
                                 file_attributes=transfer.file_attributes))
     return list_to_send
+
+@app.delete("/download/abortandclean")
+async def abort_and_clean_all_downloads():
+    core.downloads.abort_downloads()
+    core.downloads.clear_downloads()
+    return "All downloads will be aborted and cleaned"
 
 '''
     Data needed for a download:

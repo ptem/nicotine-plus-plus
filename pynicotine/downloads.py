@@ -232,9 +232,8 @@ class Downloads(Transfers):
     def _append_transfer(self, transfer):
         self.transfers[transfer.username + transfer.virtual_path] = transfer
 
-    #@pachiclana - To be removed
-    # def _update_transfer(self, transfer, update_parent=True):
-    #     events.emit("update-download", transfer, update_parent)
+    def _update_transfer(self, transfer, update_parent=True):
+        events.emit("update-download", transfer, update_parent)
 
     def _enqueue_transfer(self, transfer, bypass_filter=False):
 

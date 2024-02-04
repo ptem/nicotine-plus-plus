@@ -28,14 +28,15 @@ class WebApiSearchResult(BaseModel):
     file_name: str
     file_extension: str
     file_path: str
+    file_size: int
     bitrate: int
     search_similarity: float
     file_attributes: Optional[dict] = None
 
-class FileDownloaded(BaseModel):
+class FileDownloadedNotification(BaseModel):
     user: str
     virtual_file_path: str
-    file_download_file: str
+    file_download_path: str
 
 class WebApi:
 
@@ -103,6 +104,7 @@ class WebApi:
                                         file_name = file_name,
                                         file_extension=file_extension,
                                         file_path = file_path,
+                                        file_size = size,
                                         bitrate = bitrate,
                                         search_similarity = search_similarity,
                                         file_attributes=file_attributes
@@ -133,9 +135,10 @@ class WebApi:
 
     def _download_notification_web_api(self, username, virtual_path, download_file_path):
         
-        file = FileDownloaded(user=username, virtual_file_path=virtual_path, file_download_file=download_file_path)
+        file = FileDownloadedNotification(user=username, virtual_file_path=virtual_path, file_download_path=download_file_path)
         print(f"Download finished in: {download_file_path}")
-        response = self.session.post(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/download/notification', json=file.model_dump())
+        data = file.model_dump()
+        response = self.session.post(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/download/notification', json=data)
 
 
     def _search_timeout(self, search):
