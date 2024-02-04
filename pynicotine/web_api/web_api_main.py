@@ -100,7 +100,6 @@ async def get_dowloads():
 
 @app.delete("/download/abortandclean")
 async def abort_and_clean_all_downloads():
-    core.downloads.abort_downloads()
     core.downloads.clear_downloads()
     return "All downloads will be aborted and cleaned"
 
