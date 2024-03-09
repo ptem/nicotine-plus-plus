@@ -16,6 +16,7 @@ from difflib import SequenceMatcher
 import requests
 import time
 from typing import Optional
+import json
 
 class WebApiSearchResult(BaseModel):
     token: int
@@ -144,9 +145,14 @@ class WebApi:
     def _search_timeout(self, search):
         """Callback function that is triggered after the timeout elapses"""
 
-        def _post_search_result(self, track: WebApiSearchResult):
-            response = self.session.post(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/response/search/global', json=track.model_dump())
-            return response
+        def _post_search_result(self, track_list: list[WebApiSearchResult]):
+            try:
+                response = self.session.post(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/response/search/global', 
+                                             json=[track.model_dump() for track in track_list])
+                return response
+            except Exception as ex:
+                log.add("Failed the connection with client")
+
 
         if not search.token in self.active_searches:
             return
@@ -170,17 +176,19 @@ class WebApi:
                 free_slots_list.sort(key=lambda x: (x.search_similarity, x.ulspeed), reverse=True)
             start = time.time()
             if len(free_slots_list) > 0:
-                for track in free_slots_list[:10]:
-                    print(track.file_name)
-                    _post_search_result(self, track)
+                # for track in free_slots_list[:10]:
+                #     print(track.file_name)
+                #     _post_search_result(self, track)
+                _post_search_result(self, free_slots_list[:10])
             end = time.time()    
 
         else:
             start = time.time()
             if len(filtered_list) > 0:
-                for track in filtered_list:
-                    print(track.file_name)
-                    _post_search_result(self, track)
+                # for track in filtered_list:
+                #     print(track.file_name)
+                #     _post_search_result(self, track)
+                _post_search_result(self, filtered_list)
             end = time.time()
 
 
