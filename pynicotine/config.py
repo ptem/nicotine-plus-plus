@@ -54,7 +54,14 @@ class Config:
     def __init__(self):
 
         config_folder_path, data_folder_path = self.get_user_folders()
-        self.set_config_file(os.path.join(config_folder_path, "config"))
+        gettrace = getattr(sys, 'gettrace', None)
+
+        if gettrace():
+            #Debugger attached
+            self.set_config_file(os.path.join(config_folder_path, "config_dev"))
+        else:
+            self.set_config_file(os.path.join(config_folder_path, "config"))
+
         self.set_data_folder(data_folder_path)
 
         self.config_loaded = False
