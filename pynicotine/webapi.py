@@ -20,6 +20,7 @@ import json
 
 class WebApiSearchResult(BaseModel):
     token: int
+    search_term: str
     user: str
     ip_address: str
     port: int
@@ -30,6 +31,7 @@ class WebApiSearchResult(BaseModel):
     file_extension: str
     file_path: str
     file_size: int
+    file_h_lenght: str
     bitrate: int
     search_similarity: float
     file_attributes: Optional[dict] = None
@@ -96,6 +98,7 @@ class WebApi:
 
             items_to_return.append(WebApiSearchResult(
                                         token = msg.token,
+                                        search_term=search.term,
                                         user = msg.username,
                                         ip_address = msg.addr[0],
                                         port = msg.addr[1],
@@ -106,6 +109,7 @@ class WebApi:
                                         file_extension=file_extension,
                                         file_path = file_path,
                                         file_size = size,
+                                        file_h_lenght = h_length,
                                         bitrate = bitrate,
                                         search_similarity = search_similarity,
                                         file_attributes=file_attributes
@@ -151,8 +155,7 @@ class WebApi:
                                              json=[track.model_dump() for track in track_list])
                 return response
             except Exception as ex:
-                log.add("Failed the connection with client")
-
+                log.add("Something went wrong when sending the results to the client")
 
         if not search.token in self.active_searches:
             return
@@ -176,18 +179,12 @@ class WebApi:
                 free_slots_list.sort(key=lambda x: (x.search_similarity, x.ulspeed), reverse=True)
             start = time.time()
             if len(free_slots_list) > 0:
-                # for track in free_slots_list[:10]:
-                #     print(track.file_name)
-                #     _post_search_result(self, track)
                 _post_search_result(self, free_slots_list[:10])
             end = time.time()    
 
         else:
             start = time.time()
             if len(filtered_list) > 0:
-                # for track in filtered_list:
-                #     print(track.file_name)
-                #     _post_search_result(self, track)
                 _post_search_result(self, filtered_list)
             end = time.time()
 
