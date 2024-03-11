@@ -1,0 +1,282 @@
+{
+	"info": {
+		"_postman_id": "b47511dc-962d-465c-9dac-cbf0d84bdea0",
+		"name": "nicotine-plus-plus",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "16193089"
+	},
+	"item": [
+		{
+			"name": "do_global_search",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\t\"search_term\": \"ferreck dawn\",\n    \"smart_filters\": false\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7770/search/global",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7770",
+					"path": [
+						"search",
+						"global"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "do_global_search_filters_on",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\t\"search_term\": \"ferreck dawn\",\n\t\"search_filters\": {\"bitrate\":320,\"file_extension\": \"mp3\"},\n    \"smart_filters\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7770/search/global",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7770",
+					"path": [
+						"search",
+						"global"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "web_api_client",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"token\": 1234,\n    \"user\": \"one_user\",\n    \"ip_address\": \"192.168.1.1\",\n    \"port\": 5555,\n    \"has_free_slots\": true,\n    \"inqueue\": 2,\n    \"ulspeed\": 2983,\n    \"file_name\": \"my_track\",\n    \"file_extension\": \".mp3\",\n    \"file_path\": \"my_path\",\n    \"bitrate\": 320,\n    \"search_similarity\": 0.82398\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7771/response/search/global",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7771",
+					"path": [
+						"response",
+						"search",
+						"global"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "download_file",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"file_owner\": \"DjSan\",\n    \"file_path\": \"@@fgkrz\\\\Soulseek Downloads\\\\slsk\\\\electronica\\\\house\\\\electro\\\\dj_chus_and_david_penn-we_play_house__incl_remixes-(caba015)-web-2007-mpx\\\\01-dj_chus_and_david_penn-we_play_house_(dub_deluxe_remix)-mpx.mp3\",\n    \"file_size\": 17574396\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7770/download",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7770",
+					"path": [
+						"download"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "download_file_2",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"file_owner\": \"lordw\",\n    \"file_path\": \"@@rtwdb\\\\Soulseek\\\\complete\\\\sandros\\\\complete\\\\Happy Clappers, The Cube Guys, David Penn - I Believe (The Cube Guys Remix [David Penn Re-Edit]).mp3\",\n    \"file_size\": 15532136\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7770/download",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7770",
+					"path": [
+						"download"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "download_file_3",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"file_owner\": \"qvfgk\",\n    \"file_path\":\"@@qvfgk\\\\subdats\\\\music\\\\Tiësto\\\\Compilations\\\\Other\\\\AFTR-HRS\\\\07. Ferreck Dawn - Mad Love.mp3\",\n    \"file_size\": 9699946\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7770/download",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7770",
+					"path": [
+						"download"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get_downloads",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"file_owner\": \"lordw\",\n    \"file_path\": \"@@rtwdb\\\\Soulseek\\\\complete\\\\sandros\\\\complete\\\\Happy Clappers, The Cube Guys, David Penn - I Believe (The Cube Guys Remix [David Penn Re-Edit]).mp3\",\n    \"file_size\": 15532136\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7770/download/getdownloads",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7770",
+					"path": [
+						"download",
+						"getdownloads"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "abort_and_clean_downloads",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"file_owner\": \"lordw\",\n    \"file_path\": \"@@rtwdb\\\\Soulseek\\\\complete\\\\sandros\\\\complete\\\\Happy Clappers, The Cube Guys, David Penn - I Believe (The Cube Guys Remix [David Penn Re-Edit]).mp3\",\n    \"file_size\": 15532136\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:7770/download/abortandclean",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "7770",
+					"path": [
+						"download",
+						"abortandclean"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
