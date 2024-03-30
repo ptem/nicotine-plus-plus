@@ -1836,7 +1836,9 @@ class NetworkThread(Thread):
     def _process_file_input(self, conn_obj):
         """We have a "F" connection (filetransfer), peer has sent us something,
         this function retrieves messages from the msg_buffer, creates message
-        objects and returns them and the rest of the msg_buffer."""
+        objects and returns them and the rest of the msg_buffer.
+        
+        File progress status information is sent from here."""
 
         msg_buffer = conn_obj.ibuf
         msg_buffer_mem = memoryview(msg_buffer)

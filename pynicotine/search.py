@@ -48,6 +48,14 @@ class SearchRequest:
         self.users = users
         self.is_ignored = is_ignored
 
+class WebApiSearchRequest(SearchRequest):
+    
+    __slots__ = {"search_filters", "smart_filters"}
+
+    def __init__(self, token=None, term=None, mode=None, room=None, users=None, is_ignored=False, search_filters=None, smart_filters=None):
+        super().__init__(token, term, mode, room, users, is_ignored)
+        self.search_filters = search_filters
+        self.smart_filters = smart_filters
 
 class Search:
 
@@ -57,6 +65,7 @@ class Search:
     def __init__(self):
 
         self.searches = {}
+        self.web_api_searches = {}
         self.token = int(random.random() * (2 ** 31 - 1))
         self.wishlist_interval = 0
         self._wishlist_timer_id = None
@@ -115,6 +124,15 @@ class Search:
         )
         self.add_allowed_token(self.token)
         return search
+        
+    def add_web_api_search(self, term, mode, room=None, users=None, is_ignored=False, search_filters=False, smart_filters=False):
+
+        self.web_api_searches[self.token] = search = WebApiSearchRequest(
+            token=self.token, term=term, mode=mode, room=room, users=users, is_ignored=is_ignored, 
+            search_filters=search_filters, smart_filters=smart_filters
+        )
+        self.add_allowed_token(self.token)
+        return search
 
     def remove_search(self, token):
 
@@ -130,6 +148,16 @@ class Search:
             del self.searches[token]
 
         events.emit("remove-search", token)
+
+    def remove_web_api_search(self, token):
+
+        self.remove_allowed_token(token)
+        search = self.web_api_searches.get(token)
+
+        if search is None:
+            return
+
+        del self.web_api_searches[token]
 
     def remove_all_searches(self):
         for token in self.searches.copy():
@@ -239,6 +267,21 @@ class Search:
 
         search = self.add_search(search_term, mode, room, users)
         events.emit("add-search", search.token, search, switch_page)
+
+    def do_search_from_web_api(self, search_term, mode, room=None, users=None, search_filters=None, smart_filters=None):
+        '''Send the search term message to the server from the Web API'''
+
+        # Validate search term and run it through plugins
+        search_term, _search_term_without_special, room, users = self.process_search_term(
+            search_term, mode, room, users)
+        
+        # Get a new search token
+        self.token = slskmessages.increment_token(self.token)
+
+        if mode == "global":
+            self.do_global_search(search_term)
+
+        self.add_web_api_search(search_term, mode, room, users, search_filters=search_filters, smart_filters=smart_filters)
 
     def do_global_search(self, text):
         core.send_message_to_server(slskmessages.FileSearch(self.token, text))
@@ -352,8 +395,10 @@ class Search:
         search = self.searches.get(msg.token)
 
         if search is None or search.is_ignored:
-            msg.token = None
-            return
+            search = self.web_api_searches.get(msg.token)
+            if search is None or search.is_ignored:
+                msg.token = None
+                return
 
         username = msg.username
         ip_address, _port = msg.addr

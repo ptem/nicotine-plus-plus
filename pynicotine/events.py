@@ -168,6 +168,7 @@ EVENT_NAMES = {
     "download-file-error",
     "download-large-folder",
     "download-notification",
+    "download-notification-web-api",
     "file-connection-closed",
     "file-download-progress",
     "file-transfer-init",
