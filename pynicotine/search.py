@@ -25,6 +25,10 @@ import random
 
 from itertools import islice
 from operator import itemgetter
+from typing import Optional, List
+from difflib import SequenceMatcher
+import pathlib
+import json
 
 from pynicotine import slskmessages
 from pynicotine.config import config
@@ -33,13 +37,14 @@ from pynicotine.events import events
 from pynicotine.logfacility import log
 from pynicotine.shares import PermissionLevel
 from pynicotine.utils import TRANSLATE_PUNCTUATION
+from pynicotine.slskmessages import FileListMessage
 
 
 class SearchRequest:
 
-    __slots__ = ("token", "term", "mode", "room", "users", "is_ignored")
+    # __slots__ = ("token", "term", "mode", "room", "users", "is_ignored", "search_filters", "smart_filters", "search", "results")
 
-    def __init__(self, token=None, term=None, mode="global", room=None, users=None, is_ignored=False):
+    def __init__(self, token=None, term=None, mode="global", room=None, users=None, is_ignored=False, search_filters=None, smart_filters=None):
 
         self.token = token
         self.term = term
@@ -47,15 +52,39 @@ class SearchRequest:
         self.room = room
         self.users = users
         self.is_ignored = is_ignored
-
-class WebApiSearchRequest(SearchRequest):
-    
-    __slots__ = {"search_filters", "smart_filters"}
-
-    def __init__(self, token=None, term=None, mode=None, room=None, users=None, is_ignored=False, search_filters=None, smart_filters=None):
-        super().__init__(token, term, mode, room, users, is_ignored)
         self.search_filters = search_filters
         self.smart_filters = smart_filters
+
+class SearchResult:
+
+    # __slots__ = {"user", "ip_address", "port", "has_free_slots", "inqueue", "ulspeed", "file_name", "file_extension", "file_path", "file_size", "file_h_length", "bitrate", "search_similarity", "file_attributes"}
+
+    def __init__(self, user, ip_address, port,has_free_slots, inqueue, ulspeed, file_name, file_extension, file_path, file_size, file_h_length, bitrate, search_similarity, file_attributes):
+
+        self.user = user
+        self.ip_address = ip_address
+        self.port = port
+        self.has_free_slots = has_free_slots
+        self.inqueue = inqueue
+        self.ulspeed = ulspeed
+        self.file_name = file_name
+        self.file_extension = file_extension
+        self.file_path = file_path
+        self.file_size = file_size
+        self.file_h_length = file_h_length
+        self.bitrate = bitrate
+        self.search_similarity = search_similarity
+        self.file_attributes = file_attributes
+
+#TO BE DELETED
+# class WebApiSearchRequest(SearchRequest):
+    
+#     __slots__ = {"search_filters", "smart_filters"}
+
+#     def __init__(self, token=None, term=None, mode=None, room=None, users=None, is_ignored=False, search_filters=None, smart_filters=None):
+#         super().__init__(token, term, mode, room, users, is_ignored)
+#         self.search_filters = search_filters
+#         self.smart_filters = smart_filters
 
 class Search:
 
@@ -65,23 +94,25 @@ class Search:
     def __init__(self):
 
         self.searches = {}
-        self.web_api_searches = {}
+        #TO BE DELETED
+        # self.web_api_searches = {}
         self.token = int(random.random() * (2 ** 31 - 1))
         self.wishlist_interval = 0
         self._wishlist_timer_id = None
 
+        #TO BE DELETED
         # Create wishlist searches
-        for term in config.sections["server"]["autosearch"]:
-            self.token = slskmessages.increment_token(self.token)
-            self.searches[self.token] = SearchRequest(token=self.token, term=term, mode="wishlist", is_ignored=True)
+        # for term in config.sections["server"]["autosearch"]:
+        #     self.token = slskmessages.increment_token(self.token)
+        #     self.searches[self.token] = SearchRequest(token=self.token, term=term, mode="wishlist", is_ignored=True)
 
         for event_name, callback in (
             ("file-search-request-distributed", self._file_search_request_distributed),
             ("file-search-request-server", self._file_search_request_server),
             ("file-search-response", self._file_search_response),
             ("quit", self._quit),
-            ("server-disconnect", self._server_disconnect),
-            ("set-wishlist-interval", self._set_wishlist_interval)
+            ("server-disconnect", self._server_disconnect)
+            # ("set-wishlist-interval", self._set_wishlist_interval)
         ):
             events.connect(event_name, callback)
 
@@ -116,23 +147,24 @@ class Search:
         """Disallow parsing search result messages for a search ID."""
         slskmessages.SEARCH_TOKENS_ALLOWED.discard(token)
 
-    def add_search(self, term, mode, room=None, users=None, is_ignored=False):
+    def add_search(self, term, mode, room=None, users=None, is_ignored=False, search_filters=False, smart_filters=False):
 
         self.searches[self.token] = search = SearchRequest(
             token=self.token, term=term, mode=mode, room=room, users=users,
-            is_ignored=is_ignored
+            is_ignored=is_ignored, search_filters=search_filters, smart_filters=smart_filters
         )
         self.add_allowed_token(self.token)
         return search
         
-    def add_web_api_search(self, term, mode, room=None, users=None, is_ignored=False, search_filters=False, smart_filters=False):
+    #TO BE DELETED
+    # def add_web_api_search(self, term, mode, room=None, users=None, is_ignored=False, search_filters=False, smart_filters=False):
 
-        self.web_api_searches[self.token] = search = WebApiSearchRequest(
-            token=self.token, term=term, mode=mode, room=room, users=users, is_ignored=is_ignored, 
-            search_filters=search_filters, smart_filters=smart_filters
-        )
-        self.add_allowed_token(self.token)
-        return search
+    #     self.web_api_searches[self.token] = search = WebApiSearchRequest(
+    #         token=self.token, term=term, mode=mode, room=room, users=users, is_ignored=is_ignored, 
+    #         search_filters=search_filters, smart_filters=smart_filters
+    #     )
+    #     self.add_allowed_token(self.token)
+    #     return search
 
     def remove_search(self, token):
 
@@ -149,15 +181,16 @@ class Search:
 
         events.emit("remove-search", token)
 
-    def remove_web_api_search(self, token):
+    #TO BE DELETED
+    # def remove_web_api_search(self, token):
 
-        self.remove_allowed_token(token)
-        search = self.web_api_searches.get(token)
+    #     self.remove_allowed_token(token)
+    #     search = self.web_api_searches.get(token)
 
-        if search is None:
-            return
+    #     if search is None:
+    #         return
 
-        del self.web_api_searches[token]
+    #     del self.web_api_searches[token]
 
     def remove_all_searches(self):
         for token in self.searches.copy():
@@ -231,7 +264,7 @@ class Search:
 
         return search_term, search_term_without_special, room, users
 
-    def do_search(self, search_term, mode, room=None, users=None, switch_page=True):
+    def do_search(self, search_term, mode, room=None, users=None, search_filters=None, smart_filters=None) -> int:
         '''Send the search term message to the server'''
 
         # Validate search term and run it through plugins
@@ -266,22 +299,25 @@ class Search:
             self.do_peer_search(search_term, users)
 
         search = self.add_search(search_term, mode, room, users)
-        events.emit("add-search", search.token, search, switch_page)
+        return self.token
+        # events.emit("add-search", search.token, search, switch_page)
 
-    def do_search_from_web_api(self, search_term, mode, room=None, users=None, search_filters=None, smart_filters=None):
-        '''Send the search term message to the server from the Web API'''
+    #TO BE DELETED
+    # def do_search_from_web_api(self, search_term, mode, room=None, users=None, search_filters=None, smart_filters=None) -> int:
+    #     '''Send the search term message to the server from the Web API'''
 
-        # Validate search term and run it through plugins
-        search_term, _search_term_without_special, room, users = self.process_search_term(
-            search_term, mode, room, users)
+    #     # Validate search term and run it through plugins
+    #     search_term, _search_term_without_special, room, users = self.process_search_term(
+    #         search_term, mode, room, users)
         
-        # Get a new search token
-        self.token = slskmessages.increment_token(self.token)
+    #     # Get a new search token
+    #     self.token = slskmessages.increment_token(self.token)
 
-        if mode == "global":
-            self.do_global_search(search_term)
+    #     if mode == "global":
+    #         self.do_global_search(search_term)
 
-        self.add_web_api_search(search_term, mode, room, users, search_filters=search_filters, smart_filters=smart_filters)
+    #     self.add_web_api_search(search_term, mode, room, users, search_filters=search_filters, smart_filters=smart_filters)
+    #     return self.token
 
     def do_global_search(self, text):
         core.send_message_to_server(slskmessages.FileSearch(self.token, text))
@@ -308,80 +344,126 @@ class Search:
         for username in users:
             core.send_message_to_server(slskmessages.UserSearch(username, self.token, text))
 
-    def do_wishlist_search(self, token, text):
+    #TO BE DELETED
+    # def do_wishlist_search(self, token, text):
 
-        text = text.strip()
+    #     text = text.strip()
 
-        if not text:
-            return
+    #     if not text:
+    #         return
 
-        log.add_search(_('Searching for wishlist item "%s"'), text)
+    #     log.add_search(_('Searching for wishlist item "%s"'), text)
 
-        self.add_allowed_token(token)
-        core.send_message_to_server(slskmessages.WishlistSearch(token, text))
+    #     self.add_allowed_token(token)
+    #     core.send_message_to_server(slskmessages.WishlistSearch(token, text))
 
-    def do_wishlist_search_interval(self):
+    #TO BE DELETED
+    # def do_wishlist_search_interval(self):
 
-        if core.user_status == slskmessages.UserStatus.OFFLINE:
-            return
+    #     if core.user_status == slskmessages.UserStatus.OFFLINE:
+    #         return
 
-        searches = config.sections["server"]["autosearch"]
+    #     searches = config.sections["server"]["autosearch"]
 
-        if not searches:
-            return
+    #     if not searches:
+    #         return
 
-        # Search for a maximum of 1 item at each search interval
-        term = searches.pop()
-        searches.insert(0, term)
+    #     # Search for a maximum of 1 item at each search interval
+    #     term = searches.pop()
+    #     searches.insert(0, term)
 
-        for search in self.searches.values():
-            if search.term == term and search.mode == "wishlist":
-                search.is_ignored = False
-                self.do_wishlist_search(search.token, term)
-                break
+    #     for search in self.searches.values():
+    #         if search.term == term and search.mode == "wishlist":
+    #             search.is_ignored = False
+    #             self.do_wishlist_search(search.token, term)
+    #             break
+    
+    # TO BE DELETED
+    # def add_wish(self, wish):
 
-    def add_wish(self, wish):
+    #     if not wish:
+    #         return
 
-        if not wish:
-            return
+    #     # Get a new search token
+    #     self.token = slskmessages.increment_token(self.token)
 
-        # Get a new search token
-        self.token = slskmessages.increment_token(self.token)
+    #     if wish not in config.sections["server"]["autosearch"]:
+    #         config.sections["server"]["autosearch"].append(wish)
+    #         config.write_configuration()
 
-        if wish not in config.sections["server"]["autosearch"]:
-            config.sections["server"]["autosearch"].append(wish)
-            config.write_configuration()
+    #     self.add_search(wish, "wishlist", is_ignored=True)
+    #     events.emit("add-wish", wish)
 
-        self.add_search(wish, "wishlist", is_ignored=True)
-        events.emit("add-wish", wish)
+    #TO BE DELETED
+    # def remove_wish(self, wish):
 
-    def remove_wish(self, wish):
+    #     if wish in config.sections["server"]["autosearch"]:
+    #         config.sections["server"]["autosearch"].remove(wish)
+    #         config.write_configuration()
 
-        if wish in config.sections["server"]["autosearch"]:
-            config.sections["server"]["autosearch"].remove(wish)
-            config.write_configuration()
+    #         for search in self.searches.values():
+    #             if search.term == wish and search.mode == "wishlist":
+    #                 del search
+    #                 break
 
-            for search in self.searches.values():
-                if search.term == wish and search.mode == "wishlist":
-                    del search
-                    break
+    #     events.emit("remove-wish", wish)
 
-        events.emit("remove-wish", wish)
+    #TO BE DELETED
+    # def is_wish(self, wish):
+    #     return wish in config.sections["server"]["autosearch"]
 
-    def is_wish(self, wish):
-        return wish in config.sections["server"]["autosearch"]
+    #TO BE DELETED
+    # def _set_wishlist_interval(self, msg):
+    #     """Server code 104."""
 
-    def _set_wishlist_interval(self, msg):
-        """Server code 104."""
+    #     self.wishlist_interval = msg.seconds
 
-        self.wishlist_interval = msg.seconds
+    #     if self.wishlist_interval > 0:
+    #         log.add_search(_("Wishlist wait period set to %s seconds"), self.wishlist_interval)
 
-        if self.wishlist_interval > 0:
-            log.add_search(_("Wishlist wait period set to %s seconds"), self.wishlist_interval)
+    #         events.cancel_scheduled(self._wishlist_timer_id)
+    #         self._wishlist_timer_id = events.schedule(
+    #             delay=self.wishlist_interval, callback=self.do_wishlist_search_interval, repeat=True)
 
-            events.cancel_scheduled(self._wishlist_timer_id)
-            self._wishlist_timer_id = events.schedule(
-                delay=self.wishlist_interval, callback=self.do_wishlist_search_interval, repeat=True)
+    def _parse_search_response(self, msg, search):
+
+            def get_string_similarity(a, b):
+                return SequenceMatcher(None, a, b).ratio()
+
+            items_to_return = []
+
+            for _code, file_path, size, _ext, file_attributes, *_unused in msg.list:
+                file_path_split = file_path.split("\\")
+                file_path_split = reversed(file_path_split)
+                file_name = next(file_path_split)
+                file_extension = pathlib.Path(file_name).suffix[1:]
+                h_quality, bitrate, h_length, length = FileListMessage.parse_audio_quality_length(size, file_attributes)
+                if msg.freeulslots:
+                    inqueue = 0
+                else:
+                    inqueue = msg.inqueue or 1  # Ensure value is always >= 1
+                search_similarity = get_string_similarity(search.term, file_name)
+
+                item = SearchResult(
+                                        user = msg.username,
+                                        ip_address = msg.addr[0],
+                                        port = msg.addr[1],
+                                        has_free_slots = msg.freeulslots,
+                                        inqueue = inqueue,
+                                        ulspeed = msg.ulspeed or 0, 
+                                        file_name = file_name,
+                                        file_extension=file_extension,
+                                        file_path = file_path,
+                                        file_size = size,
+                                        file_h_length = h_length,
+                                        bitrate = bitrate,
+                                        search_similarity = search_similarity,
+                                        file_attributes=file_attributes
+                                    )
+
+                items_to_return.append(item)
+            
+            return items_to_return
 
     def _file_search_response(self, msg):
         """Peer code 9.
@@ -395,10 +477,8 @@ class Search:
         search = self.searches.get(msg.token)
 
         if search is None or search.is_ignored:
-            search = self.web_api_searches.get(msg.token)
-            if search is None or search.is_ignored:
-                msg.token = None
-                return
+            msg.token = None
+            return
 
         username = msg.username
         ip_address, _port = msg.addr
@@ -409,6 +489,10 @@ class Search:
 
         if core.network_filter.is_user_ip_ignored(username, ip_address):
             msg.token = None
+
+        # search.results = self._parse_search_response(msg, search)
+        for response in self._parse_search_response(msg, search):
+            search.results.append(response)
 
     def _file_search_request_server(self, msg):
         """Server code 26, 42 and 120."""

@@ -52,7 +52,7 @@ class WebApi:
         for event_name, callback in (
             ("quit", self._quit),
             ("start", self._start),
-            ("file-search-response", self._file_search_response),
+            # ("file-search-response", self._file_search_response),
             ("download-notification", self._download_notification),
             ("download-notification-web-api", self._download_notification_web_api)
         ):
