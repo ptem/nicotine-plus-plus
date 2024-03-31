@@ -62,27 +62,17 @@ class Core:
         self.cli_listen_port = None
 
         self.enabled_components = set()
-        self.user_status = slskmessages.UserStatus.OFFLINE
-        self.login_username = None  # Only present while logged in
-        self.public_ip_address = None
-        self.public_port = None
-        self.privileges_left = None
-
-        self.user_addresses = {}
-        self.user_countries = {}
-        self.user_statuses = {}
-        self.watched_users = {}
-        self._ip_requested = {}
 
     def init_components(self, enabled_components=None):
 
         # Enable all components by default
         if enabled_components is None:
             enabled_components = {
-                "error_handler", "signal_handler", "cli", "portmapper", "network_thread",
+                "error_handler", "signal_handler", "cli", "portmapper", "network_thread", "shares", "users",
                 "notifications", "network_filter", "now_playing", "statistics", "update_checker",
-                "shares", "search", "downloads", "uploads", "interests", "userbrowse", "userinfo", "userlist",
-                "chatrooms", "privatechat", "pluginhandler", "web_api"
+                "search", "downloads", "uploads", "interests", "userbrowse", "userinfo", "buddies",
+                "chatrooms", "privatechat", "pluginhandler",
+                "web_api"
             }
 
         self.enabled_components = enabled_components
