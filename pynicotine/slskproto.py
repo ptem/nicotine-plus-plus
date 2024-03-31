@@ -1,4 +1,4 @@
-# COPYRIGHT (C) 2020-2023 Nicotine+ Contributors
+# COPYRIGHT (C) 2020-2024 Nicotine+ Contributors
 # COPYRIGHT (C) 2008-2012 quinox <quinox@users.sf.net>
 # COPYRIGHT (C) 2007-2009 daelstorm <daelstorm@gmail.com>
 # COPYRIGHT (C) 2003-2004 Hyriand <hyriand@thegraveyard.org>
@@ -25,6 +25,7 @@ import struct
 import sys
 import time
 
+from collections import defaultdict
 from collections import deque
 from threading import Thread
 
@@ -44,7 +45,6 @@ from pynicotine.slskmessages import UINT32_UNPACK
 from pynicotine.slskmessages import AcceptChildren
 from pynicotine.slskmessages import BranchLevel
 from pynicotine.slskmessages import BranchRoot
-from pynicotine.slskmessages import CheckPrivileges
 from pynicotine.slskmessages import CloseConnection
 from pynicotine.slskmessages import CloseConnectionIP
 from pynicotine.slskmessages import ConnectionType
@@ -63,7 +63,6 @@ from pynicotine.slskmessages import GetPeerAddress
 from pynicotine.slskmessages import GetUserStats
 from pynicotine.slskmessages import GetUserStatus
 from pynicotine.slskmessages import HaveNoParent
-from pynicotine.slskmessages import InitPeerConnection
 from pynicotine.slskmessages import Login
 from pynicotine.slskmessages import MessageType
 from pynicotine.slskmessages import PossibleParents
@@ -73,7 +72,6 @@ from pynicotine.slskmessages import PeerInit
 from pynicotine.slskmessages import PierceFireWall
 from pynicotine.slskmessages import Relogged
 from pynicotine.slskmessages import ResetDistributed
-from pynicotine.slskmessages import RoomList
 from pynicotine.slskmessages import ServerConnect
 from pynicotine.slskmessages import ServerDisconnect
 from pynicotine.slskmessages import SetDownloadLimit
@@ -96,7 +94,7 @@ class Connection:
     slskmessages docstrings).
     """
 
-    __slots__ = ("sock", "addr", "selector_events", "ibuf", "obuf", "lastactive", "lastreadlength")
+    __slots__ = ("sock", "addr", "selector_events", "ibuf", "obuf", "lastactive", "recv_size")
 
     def __init__(self, sock=None, addr=None, selector_events=None):
 
@@ -106,7 +104,7 @@ class Connection:
         self.ibuf = bytearray()
         self.obuf = bytearray()
         self.lastactive = time.monotonic()
-        self.lastreadlength = 100 * 1024
+        self.recv_size = None
 
 
 class ServerConnection(Connection):
@@ -135,6 +133,8 @@ class PeerConnection(Connection):
 
 
 class NetworkInterfaces:
+
+    SO_BINDTODEVICE = None
 
     if sys.platform == "win32":
         from ctypes import POINTER, Structure, wintypes
@@ -194,6 +194,7 @@ class NetworkInterfaces:
 
     elif sys.platform == "linux":
         SIOCGIFADDR = 0x8915
+        SO_BINDTODEVICE = 25
 
     elif sys.platform.startswith("sunos"):
         SIOCGIFADDR = -0x3fdf96f3  # Solaris
@@ -295,10 +296,22 @@ class NetworkInterfaces:
         return cls.get_interface_addresses().get(interface_name)
 
     @classmethod
-    def bind_to_interface_address(cls, sock, address):
-        """Bind socket to the IP address of a network interface, retrieved from
-        get_interface_addresses().
+    def bind_to_interface(cls, sock, interface_name, address):
+        """Bind socket to the specified network interface name, if required on
+        the current platform. Otherwise bind to the IP address of the network
+        interface, retrieved from get_interface_addresses().
         """
+
+        try:
+            # We need to use SO_BINDTODEVICE on Linux, since socket.bind() has no
+            # effect on routing (weak host model).
+            if cls.SO_BINDTODEVICE:
+                sock.setsockopt(socket.SOL_SOCKET, cls.SO_BINDTODEVICE, interface_name.encode())
+                return
+
+        except PermissionError as error:
+            log.add_debug(("Failed to bind socket to network interface with SO_BINDTODEVICE. "
+                           "Falling back to socket.bind(). Error: %s"), error)
 
         sock.bind((address, 0))
 
@@ -316,11 +329,15 @@ class NetworkThread(Thread):
     IN_PROGRESS_STALE_AFTER = 2
     CONNECTION_MAX_IDLE = 60
     CONNECTION_MAX_IDLE_GHOST = 10
-    CONNECTION_BACKLOG_LENGTH = 4096
+    CONNECTION_BACKLOG_LENGTH = 65535      # OS limit can be lower
     MAX_INCOMING_MESSAGE_SIZE = 469762048  # 448 MiB, to leave headroom for large shares
-    SOCKET_READ_BUFFER_SIZE = 1048576
-    SOCKET_WRITE_BUFFER_SIZE = 1048576
-    SLEEP_MIN_IDLE = 0.016                 # ~60 times per second
+    SOCKET_READ_BUFFER_SIZE = 1048576      # OS limit can be lower
+    SOCKET_WRITE_BUFFER_SIZE = 1048576     # OS limit can be lower
+
+    # Looping max ~60 times per second (SLEEP_MIN_IDLE) on high activity
+    # ~20 (SLEEP_MAX_IDLE + SLEEP_MIN_IDLE) by default
+    SLEEP_MAX_IDLE = 0.0333
+    SLEEP_MIN_IDLE = 0.0166
 
     try:
         import resource
@@ -350,7 +367,8 @@ class NetworkThread(Thread):
 
         super().__init__(name="NetworkThread")
 
-        self._queue = deque()
+        self._message_queue = deque()
+        self._pending_peer_conns = {}
         self._pending_init_msgs = {}
         self._token_init_msgs = {}
         self._username_init_msgs = {}
@@ -386,28 +404,24 @@ class NetworkThread(Thread):
         self._upload_speed = 0
 
         self._num_sockets = 1
-        self._last_conn_stat_time = 0
+        self._last_cycle_time = 0
 
         self._conns = {}
         self._conns_in_progress = {}
         self._out_indirect_conn_request_times = {}
         self._token = 0
 
+        self._conns_downloaded = defaultdict(int)
+        self._conns_uploaded = defaultdict(int)
         self._calc_upload_limit_function = self._calc_upload_limit_none
         self._upload_limit = 0
         self._download_limit = 0
         self._upload_limit_split = 0
         self._download_limit_split = 0
-        self._ulimits = {}
-        self._dlimits = {}
         self._total_uploads = 0
         self._total_downloads = 0
         self._total_download_bandwidth = 0
         self._total_upload_bandwidth = 0
-        self._last_cycle_time = 0
-        self._current_cycle_loop_count = 0
-        self._last_cycle_loop_count = 0
-        self._loops_per_second = 0
 
         for event_name, callback in (
             ("enable-message-queue", self._enable_message_queue),
@@ -422,7 +436,7 @@ class NetworkThread(Thread):
 
     def _queue_network_message(self, msg):
         if self._should_process_queue:
-            self._queue.append(msg)
+            self._message_queue.append(msg)
 
     def _schedule_quit(self, should_finish_uploads):
         self._want_abort = not should_finish_uploads
@@ -487,8 +501,13 @@ class NetworkThread(Thread):
             return False
 
         self._local_ip_address = ip_address
-        log.add(_("Listening on port: %i"), self._listen_port)
+
+        if self._interface_name:
+            log.add_debug("Network interface: %s", self._interface_name)
+
+        log.add_debug("Local IP address: %s", ip_address)
         log.add_debug("Maximum number of concurrent connections (sockets): %i", self.MAX_SOCKETS)
+        log.add(_("Listening on port: %i"), self._listen_port)
         return True
 
     # Connections #
@@ -508,18 +527,19 @@ class NetworkThread(Thread):
                 continue
 
             log.add_conn(("Indirect connect request of type %(type)s to user %(user)s with "
-                          "token %(token)s expired, giving up"), {
+                          "token %(token)s expired"), {
                 "type": conn_type,
                 "user": username,
                 "token": init.token
             })
 
-            events.emit_main_thread("peer-connection-error", username, init.outgoing_msgs[:])
+            if init.sock is None:
+                # No direct connection was established, give up
+                events.emit_main_thread("peer-connection-error", username, init.outgoing_msgs[:])
+                init.outgoing_msgs.clear()
+                self._username_init_msgs.pop(username + conn_type, None)
 
             self._token_init_msgs.pop(init.token, None)
-            self._username_init_msgs.pop(username + conn_type, None)
-            init.outgoing_msgs.clear()
-
             timed_out_requests.add(init)
 
         if not timed_out_requests:
@@ -530,13 +550,13 @@ class NetworkThread(Thread):
 
         timed_out_requests.clear()
 
-    @staticmethod
-    def _is_connection_still_active(conn_obj):
+    def _is_connection_still_active(self, conn_obj):
 
         init = conn_obj.init
 
-        if init is not None and init.conn_type != "P":
-            # Distributed and file connections are critical, always assume they are active
+        if init is not None and (init.conn_type != "P" or init.target_user == self._server_username):
+            # Distributed and file connections, as well as connections to ourselves,
+            # are critical. Always assume they are active.
             return True
 
         return len(conn_obj.obuf) > 0 or len(conn_obj.ibuf) > 0
@@ -549,7 +569,7 @@ class NetworkThread(Thread):
 
         if self._interface_address:
             if sock is not self._listen_socket:
-                NetworkInterfaces.bind_to_interface_address(sock, self._interface_address)
+                NetworkInterfaces.bind_to_interface(sock, self._interface_name, self._interface_address)
 
             return True
 
@@ -565,7 +585,7 @@ class NetworkThread(Thread):
 
             # Send a broadcast packet on a local address (doesn't need to be reachable,
             # but MacOS requires port to be non-zero)
-            local_socket.connect(("10.255.255.255", 1))
+            local_socket.connect_ex(("10.255.255.255", 1))
 
             # This returns the "primary" IP on the local box, even if that IP is a NAT/private/internal IP
             ip_address = local_socket.getsockname()[0]
@@ -677,7 +697,7 @@ class NetworkThread(Thread):
         for j in msgs:
             j.username = username
             j.sock = sock
-            self._queue_network_message(j)
+            self._process_outgoing_message(j)
 
         msgs.clear()
 
@@ -722,7 +742,7 @@ class NetworkThread(Thread):
 
             init.outgoing_msgs.append(message)
 
-            if init.sock is not None:
+            if init.sock is not None and init.sock in self._conns:
                 # We have initiated a connection previously, and it's ready
                 self._process_conn_messages(init)
 
@@ -780,21 +800,16 @@ class NetworkThread(Thread):
             })
             return
 
-        if not init.indirect:
-            # Also request indirect connection in case the user's port is closed
-            self._connect_to_peer_indirect(init)
-
-        self._queue_network_message(InitPeerConnection(addr, init))
-
         log.add_conn("Attempting direct connection of type %(type)s to user %(user)s %(addr)s", {
             "type": conn_type,
             "user": username,
             "addr": addr
         })
+        self._init_peer_connection(addr, init)
 
     def _connect_error(self, error, conn_obj):
 
-        if conn_obj.sock is self._server_socket:
+        if conn_obj.__class__ is ServerConnection:
             server_address, port = conn_obj.addr
 
             log.add(
@@ -868,7 +883,7 @@ class NetworkThread(Thread):
                 "user": username,
                 "token": token
             })
-            self._queue_network_message(PierceFireWall(sock, token))
+            self._process_outgoing_message(PierceFireWall(sock, token))
             self._accept_child_peer_connection(conn_obj)
 
         else:
@@ -877,17 +892,7 @@ class NetworkThread(Thread):
                 "type": conn_type,
                 "user": username
             })
-            self._queue_network_message(init)
-
-            # Direct and indirect connections are attempted at the same time, clean up
-            self._token_init_msgs.pop(token, None)
-
-            if self._out_indirect_conn_request_times.pop(init, None):
-                log.add_conn(("Stopping indirect connection attempt of type %(type)s to user "
-                              "%(user)s"), {
-                    "type": conn_type,
-                    "user": username
-                })
+            self._process_outgoing_message(init)
 
         self._process_conn_messages(init)
 
@@ -912,7 +917,8 @@ class NetworkThread(Thread):
         init.outgoing_msgs = prev_init.outgoing_msgs
         prev_init.outgoing_msgs = []
 
-        self._close_connection(self._conns, prev_init.sock, callback=False)
+        self._close_connection(self._conns, prev_init.sock)
+        self._close_connection(self._conns_in_progress, prev_init.sock)
 
     @staticmethod
     def _close_socket(sock):
@@ -932,7 +938,7 @@ class NetworkThread(Thread):
         log.add_conn("Closing socket %s", sock)
         sock.close()
 
-    def _close_connection(self, connection_list, sock, callback=True):
+    def _close_connection(self, connection_list, sock):
 
         conn_obj = connection_list.pop(sock, None)
 
@@ -944,6 +950,7 @@ class NetworkThread(Thread):
         self._close_socket(sock)
         self._num_sockets -= 1
 
+        conn_obj.sock = None
         conn_obj.ibuf.clear()
         conn_obj.obuf.clear()
 
@@ -954,8 +961,36 @@ class NetworkThread(Thread):
 
         init = conn_obj.init
 
-        if sock is self._parent_socket and self._should_process_queue:
-            self._send_have_no_parent()
+        if init is None:
+            # No peer init message present, nothing to do
+            return
+
+        conn_type = init.conn_type
+        username = init.target_user
+        is_connection_replaced = (init.sock != sock)
+
+        log.add_conn("Removed connection of type %(type)s to user %(user)s %(addr)s", {
+            "type": conn_type,
+            "user": username,
+            "addr": conn_obj.addr
+        })
+
+        if not is_connection_replaced:
+            init.sock = None
+
+        if conn_type == ConnectionType.PEER:
+            if (not is_connection_replaced and connection_list is not self._conns_in_progress
+                    and self._should_process_queue):
+                events.emit_main_thread("peer-connection-closed", username, init.outgoing_msgs[:])
+
+        elif conn_type == ConnectionType.DISTRIBUTED:
+            child_conn_obj = self._child_peers.get(username)
+
+            if child_conn_obj == conn_obj:
+                self._remove_child_peer_connection(username)
+
+            elif sock is self._parent_socket:
+                self._send_have_no_parent()
 
         elif conn_obj.fileinit is not None:
             if self._is_transferring_download(conn_obj):
@@ -974,35 +1009,11 @@ class NetworkThread(Thread):
 
                 self._calc_upload_limit_function()
 
-            if callback:
+            if self._should_process_queue:
                 timed_out = (time.monotonic() - conn_obj.lastactive) > self.CONNECTION_MAX_IDLE
                 events.emit_main_thread(
-                    "file-connection-closed", username=init.target_user, token=conn_obj.fileinit.token,
+                    "file-connection-closed", username=username, token=conn_obj.fileinit.token,
                     sock=sock, timed_out=timed_out)
-
-        elif init is not None:
-            if callback:
-                events.emit_main_thread("peer-connection-closed", init.target_user, init.outgoing_msgs[:])
-
-        else:
-            # No peer init message present, nothing to do
-            return
-
-        conn_type = init.conn_type
-        username = init.target_user
-
-        log.add_conn("Removed connection of type %(type)s to user %(user)s %(addr)s", {
-            "type": conn_type,
-            "user": username,
-            "addr": conn_obj.addr
-        })
-
-        if conn_type == ConnectionType.DISTRIBUTED and self._child_peers.pop(username, None):
-            if len(self._child_peers) == self._max_distrib_children - 1:
-                log.add_conn("Available to accept a new distributed child peer")
-                self._send_message_to_server(AcceptChildren(True))
-
-            log.add_conn("List of current child peers: %s", str(list(self._child_peers.keys())))
 
         init_key = username + conn_type
         user_init = self._username_init_msgs.get(init_key)
@@ -1016,14 +1027,9 @@ class NetworkThread(Thread):
             "addr": conn_obj.addr
         })
 
-        if init is not user_init:
+        if is_connection_replaced or init is not user_init:
             # Don't remove init message if connection has been superseded
             log.add_conn("Cannot remove PeerInit message, since the connection has been superseded")
-            return
-
-        if connection_list is self._conns_in_progress and user_init.sock is not None:
-            # Outgoing connection failed, but an indirect connection was already established
-            log.add_conn("Cannot remove PeerInit message, an indirect connection was already established previously")
             return
 
         if init in self._out_indirect_conn_request_times:
@@ -1071,7 +1077,7 @@ class NetworkThread(Thread):
 
         for sock in stale_sockets:
             self._connect_error("Timed out", self._conns_in_progress[sock])
-            self._close_connection(self._conns_in_progress, sock, callback=False)
+            self._close_connection(self._conns_in_progress, sock)
 
         stale_sockets.clear()
 
@@ -1200,7 +1206,7 @@ class NetworkThread(Thread):
 
     def _init_server_conn(self, msg_obj):
 
-        self._server_socket = server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         selector_events = selectors.EVENT_READ | selectors.EVENT_WRITE
         conn_obj = ServerConnection(
             sock=server_socket, addr=msg_obj.addr, selector_events=selector_events, login=msg_obj.login)
@@ -1213,10 +1219,18 @@ class NetworkThread(Thread):
         self._set_server_socket_keepalive(server_socket)
         self._bind_socket_interface(server_socket)
 
-        server_socket.connect_ex(msg_obj.addr)
+        try:
+            server_socket.connect_ex(msg_obj.addr)
 
-        self._selector.register(server_socket, selector_events)
+        except OSError as error:
+            self._connect_error(error, conn_obj)
+            self._close_socket(server_socket)
+            self._server_disconnect()
+            return
+
+        self._server_socket = server_socket
         self._conns_in_progress[server_socket] = conn_obj
+        self._selector.register(server_socket, selector_events)
         self._num_sockets += 1
 
     def _establish_outgoing_server_connection(self, conn_obj):
@@ -1305,18 +1319,11 @@ class NetworkThread(Thread):
                             self._portmapper.add_port_mapping(blocking=True)
 
                             msg.username = self._server_username
-                            self._send_message_to_server(CheckPrivileges())
 
                             # Ask for a list of parents to connect to (distributed network)
                             self._send_have_no_parent()
-
-                            # Request a complete room list. A limited room list not including blacklisted rooms and
-                            # rooms with few users is automatically sent when logging in, but subsequent room list
-                            # requests contain all rooms.
-                            self._send_message_to_server(RoomList())
-
                         else:
-                            self._send_message_to_server(ServerDisconnect())
+                            should_close_connection = True
 
                     elif msg_class is ConnectToPeer:
                         username = msg.user
@@ -1337,9 +1344,9 @@ class NetworkThread(Thread):
                         self._connect_to_peer(username, addr, init)
 
                     elif msg_class is GetUserStatus:
-                        if msg.status == UserStatus.OFFLINE:
+                        if msg.status == UserStatus.OFFLINE and msg.user in self._user_addresses:
                             # User went offline, reset stored IP address
-                            self._user_addresses.pop(msg.user, None)
+                            self._user_addresses[msg.user] = None
 
                     elif msg_class is GetPeerAddress:
                         username = msg.user
@@ -1353,11 +1360,11 @@ class NetworkThread(Thread):
                             )
 
                         addr = (msg.ip_address, msg.port)
-                        user_offline = (addr == ("0.0.0.0", 0))
+                        user_offline = (msg.ip_address == "0.0.0.0")
 
                         for init in pending_init_msgs:
                             # We now have the IP address for a user we previously didn't know,
-                            # attempt a direct connection to the peer/user
+                            # attempt a connection with the peer/user
                             if user_offline:
                                 events.emit_main_thread(
                                     "peer-connection-error", username, init.outgoing_msgs[:], is_offline=True)
@@ -1365,14 +1372,21 @@ class NetworkThread(Thread):
                                 self._connect_to_peer(username, addr, init)
 
                         # We already store a local IP address for our username
-                        if username != self._server_username and not user_offline:
+                        if username != self._server_username and username in self._user_addresses:
+                            if user_offline or not msg.port:
+                                addr = None
+
                             self._user_addresses[username] = addr
 
                     elif msg_class in (WatchUser, GetUserStats):
-                        if msg.user == self._server_username and msg.avgspeed is not None:
-                            self._upload_speed = msg.avgspeed
-                            log.add_conn("Server reported our upload speed as %s", human_speed(msg.avgspeed))
-                            self._update_maximum_distributed_children()
+                        if msg.user == self._server_username:
+                            if msg.avgspeed is not None:
+                                self._upload_speed = msg.avgspeed
+                                log.add_conn("Server reported our upload speed as %s", human_speed(msg.avgspeed))
+                                self._update_maximum_distributed_children()
+
+                        elif msg_class is WatchUser and not msg.userexists:
+                            self._user_addresses.pop(msg.user, None)
 
                     elif msg_class is Relogged:
                         self._manual_server_disconnect = True
@@ -1408,7 +1422,7 @@ class NetworkThread(Thread):
                         if self._parent_socket is not None:
                             self._close_connection(self._conns, self._parent_socket)
 
-                        for child_conn_obj in self._child_peers.values():
+                        for child_conn_obj in self._child_peers.copy().values():
                             self._close_connection(self._conns, child_conn_obj.sock)
 
                         self._send_have_no_parent()
@@ -1428,6 +1442,7 @@ class NetworkThread(Thread):
         msg_buffer_mem.release()
 
         if should_close_connection:
+            self._manual_server_disconnect = True
             self._close_connection(self._conns, self._server_socket)
             return
 
@@ -1440,6 +1455,13 @@ class NetworkThread(Thread):
 
         if msg is None:
             return
+
+        msg_class = msg_obj.__class__
+
+        if msg_class is WatchUser and msg_obj.user not in self._user_addresses:
+            # Only cache IP address of watched users, otherwise we won't know if
+            # a user reconnects and changes their IP address.
+            self._user_addresses[msg_obj.user] = None
 
         conn_obj = self._conns[self._server_socket]
         conn_obj.obuf.extend(msg_obj.pack_uint32(len(msg) + 4))
@@ -1474,12 +1496,13 @@ class NetworkThread(Thread):
         self._user_addresses.clear()
 
         for sock in self._conns.copy():
-            self._close_connection(self._conns, sock, callback=False)
+            self._close_connection(self._conns, sock)
 
         for sock in self._conns_in_progress.copy():
-            self._close_connection(self._conns_in_progress, sock, callback=False)
+            self._close_connection(self._conns_in_progress, sock)
 
-        self._queue.clear()
+        self._message_queue.clear()
+        self._pending_peer_conns.clear()
         self._pending_init_msgs.clear()
         self._token_init_msgs.clear()
         self._username_init_msgs.clear()
@@ -1512,7 +1535,7 @@ class NetworkThread(Thread):
         events.emit_main_thread("server-disconnect", self._manual_server_disconnect)
 
     def _send_message_to_server(self, message):
-        self._queue_network_message(message)
+        self._process_outgoing_message(message)
 
     # Peer Init #
 
@@ -1527,7 +1550,7 @@ class NetworkThread(Thread):
 
         # Peer init messages are 8 bytes or greater in length
         while buffer_len >= 8 and init is None:
-            msg_size = UINT32_UNPACK(msg_buffer_mem, idx)[0]
+            msg_size, = UINT32_UNPACK(msg_buffer_mem, idx)
             msg_size_total = msg_size + 4
 
             if msg_size_total > self.MAX_INCOMING_MESSAGE_SIZE:
@@ -1571,13 +1594,27 @@ class NetworkThread(Thread):
                             should_close_connection = True
                             break
 
-                        init.sock = conn_obj.sock
+                        previous_sock = init.sock
+                        is_direct_conn_in_progress = (
+                            previous_sock is not None and previous_sock in self._conns_in_progress)
                         self._out_indirect_conn_request_times.pop(init, None)
 
                         log.add_conn("Indirect connection to user %(user)s with token %(token)s established", {
                             "user": init.target_user,
                             "token": msg.token
                         })
+
+                        if previous_sock is None or is_direct_conn_in_progress:
+                            init.sock = conn_obj.sock
+                            log.add_conn("Using as primary connection, since no direct connection is established")
+                        else:
+                            # We already have a direct connection, but some clients may send a message over
+                            # the indirect connection. Keep it open.
+                            log.add_conn("Direct connection was already established, keeping it as primary connection")
+
+                        if is_direct_conn_in_progress:
+                            log.add_conn("Stopping direct connection attempt to user %s", init.target_user)
+                            self._close_connection(self._conns_in_progress, previous_sock)
 
                     elif msg_class is PeerInit:
                         username = msg.target_user
@@ -1647,22 +1684,58 @@ class NetworkThread(Thread):
 
     # Peer Connection #
 
-    def _init_peer_connection(self, msg_obj):
+    def _init_peer_connection(self, addr, init):
+
+        if self._num_sockets >= self.MAX_SOCKETS:
+            # Connection limit reached, re-queue
+            self._pending_peer_conns[addr] = init
+            return
+
+        _ip_address, port = addr
+        self._pending_peer_conns.pop(addr, None)
+
+        if not init.indirect:
+            # Also request indirect connection in case the user's port is closed
+            self._connect_to_peer_indirect(init)
+
+        if port <= 0:
+            log.add_conn(("Skipping direct connection attempt of type %(type)s to user %(user)s "
+                          "due to invalid address %(addr)s"), {
+                "type": init.conn_type,
+                "user": init.target_user,
+                "addr": addr
+            })
+            return
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         selector_events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        conn_obj = PeerConnection(sock=sock, addr=msg_obj.addr, selector_events=selector_events, init=msg_obj.init)
+        conn_obj = PeerConnection(sock=sock, addr=addr, selector_events=selector_events, init=init)
 
         sock.setblocking(False)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.SOCKET_READ_BUFFER_SIZE)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.SOCKET_WRITE_BUFFER_SIZE)
         self._bind_socket_interface(sock)
 
-        sock.connect_ex(msg_obj.addr)
+        try:
+            sock.connect_ex(addr)
 
-        self._selector.register(sock, selector_events)
+        except OSError as error:
+            self._connect_error(error, conn_obj)
+            self._close_socket(sock)
+            return
+
+        init.sock = sock
         self._conns_in_progress[sock] = conn_obj
+        self._selector.register(sock, selector_events)
         self._num_sockets += 1
+
+    def _init_pending_peer_connections(self):
+
+        if not self._pending_peer_conns:
+            return
+
+        for addr, init in self._pending_peer_conns.copy().items():
+            self._init_peer_connection(addr, init)
 
     def _process_peer_input(self, conn_obj):
         """We have a "P" connection (p2p exchange), peer has sent us something,
@@ -1810,29 +1883,6 @@ class NetworkThread(Thread):
 
         self._download_limit_split = int(limit)
 
-    def _calc_loops_per_second(self, current_time):
-        """Calculate number of loops per second.
-
-        This value is used to split the per-second transfer speed limit
-        evenly for each loop.
-        """
-
-        if current_time - self._last_cycle_time >= 1:
-            self._loops_per_second = (self._last_cycle_loop_count + self._current_cycle_loop_count) // 2
-
-            self._last_cycle_loop_count = self._current_cycle_loop_count
-            self._last_cycle_time = current_time
-            self._current_cycle_loop_count = 0
-        else:
-            self._current_cycle_loop_count += 1
-
-    def _set_conn_speed_limit(self, sock, limit, limits):
-
-        limit //= (self._loops_per_second or 1)
-
-        if limit > 0:
-            limits[sock] = limit
-
     def _process_file_input(self, conn_obj):
         """We have a "F" connection (filetransfer), peer has sent us something,
         this function retrieves messages from the msg_buffer, creates message
@@ -1860,8 +1910,12 @@ class NetworkThread(Thread):
             added_bytes_mem = msg_buffer_mem[:idx]
 
             if added_bytes_mem:
+                added_bytes_len = len(added_bytes_mem)
+                self._total_download_bandwidth += added_bytes_len
+
                 try:
                     conn_obj.filedown.file.write(added_bytes_mem)
+                    conn_obj.filedown.leftbytes -= added_bytes_len
 
                 except (OSError, ValueError) as error:
                     events.emit_main_thread(
@@ -1869,10 +1923,6 @@ class NetworkThread(Thread):
                         error=error
                     )
                     should_close_connection = True
-
-                added_bytes_len = len(added_bytes_mem)
-                self._total_download_bandwidth += added_bytes_len
-                conn_obj.filedown.leftbytes -= added_bytes_len
 
             current_time = time.monotonic()
             finished = (conn_obj.filedown.leftbytes <= 0)
@@ -1885,7 +1935,7 @@ class NetworkThread(Thread):
                     "file-download-progress", username=conn_obj.init.target_user, token=conn_obj.filedown.token,
                     bytes_left=conn_obj.filedown.leftbytes
                 )
-                conn_obj.lastcallback = self._last_conn_stat_time
+                conn_obj.lastcallback = self._last_cycle_time
 
             if finished:
                 should_close_connection = True
@@ -1973,6 +2023,13 @@ class NetworkThread(Thread):
             # We have no parent user and the server hasn't sent search requests, no point
             # in accepting child peers
             log.add_conn("Rejecting distributed child peer connection from user %s, since we have no parent", username)
+            self._close_connection(self._conns, conn_obj.sock)
+            return
+
+        if username in self._child_peers:
+            log.add_conn(("Rejecting distributed child peer connection from user %s, since an existing connection "
+                          "already exists"), username)
+            self._close_connection(self._conns, conn_obj.sock)
             return
 
         if len(self._child_peers) >= self._max_distrib_children:
@@ -1998,6 +2055,19 @@ class NetworkThread(Thread):
                           "no longer accepting new connections"), self._max_distrib_children)
             self._send_message_to_server(AcceptChildren(False))
 
+    def _remove_child_peer_connection(self, username):
+
+        self._child_peers.pop(username, None)
+
+        if not self._should_process_queue:
+            return
+
+        if len(self._child_peers) == self._max_distrib_children - 1:
+            log.add_conn("Available to accept a new distributed child peer")
+            self._send_message_to_server(AcceptChildren(True))
+
+        log.add_conn("List of current child peers: %s", str(list(self._child_peers.keys())))
+
     def _send_message_to_child_peers(self, msg):
 
         msg_class = msg.__class__
@@ -2007,7 +2077,7 @@ class NetworkThread(Thread):
             msg_child = msg_class(*msg_attrs)
             msg_child.sock = conn_obj.sock
 
-            self._queue_network_message(msg_child)
+            self._process_outgoing_message(msg_child)
 
     def _distribute_embedded_message(self, msg):
         """Distributes an embedded message from the server to our child
@@ -2049,10 +2119,16 @@ class NetworkThread(Thread):
         start sending us search requests.
         """
 
+        if not self._should_process_queue:
+            return
+
+        # Note that we don't clear the previous list of possible parents here, since
+        # it's possible the parent connection was closed immediately or superseded by
+        # an indirect connection
         self._parent_socket = None
         self._branch_level = 0
         self._branch_root = self._server_username
-        self._potential_parents.clear()
+
         log.add_conn("We have no parent, requesting a new one")
 
         self._send_message_to_server(HaveNoParent(True))
@@ -2105,7 +2181,7 @@ class NetworkThread(Thread):
 
         # Distributed messages are 5 bytes or greater in length
         while buffer_len >= 5:
-            msg_size = UINT32_UNPACK(msg_buffer_mem, idx)[0]
+            msg_size, = UINT32_UNPACK(msg_buffer_mem, idx)
             msg_size_total = msg_size + 4
 
             if msg_size_total > self.MAX_INCOMING_MESSAGE_SIZE:
@@ -2178,19 +2254,19 @@ class NetworkThread(Thread):
                             if self._branch_level == 1:
                                 # Our current branch level is 1, our parent is a branch root
                                 self._set_branch_root(msg.username)
-                            continue
 
-                        if not self._verify_parent_connection(conn_obj, msg_class):
+                        elif not self._verify_parent_connection(conn_obj, msg_class):
                             should_close_connection = True
                             break
 
-                        # Inform the server and child peers of our new branch level
-                        self._branch_level = msg.level + 1
-                        self._send_message_to_server(BranchLevel(self._branch_level))
-                        self._send_message_to_child_peers(DistribBranchLevel(self._branch_level))
+                        else:
+                            # Inform the server and child peers of our new branch level
+                            self._branch_level = msg.level + 1
+                            self._send_message_to_server(BranchLevel(self._branch_level))
+                            self._send_message_to_child_peers(DistribBranchLevel(self._branch_level))
 
-                        log.add_conn("Received a branch level update from our parent. Our new branch level is %s",
-                                     self._branch_level)
+                            log.add_conn("Received a branch level update from our parent. Our new branch level is %s",
+                                         self._branch_level)
 
                     elif msg_class is DistribBranchRoot:
                         if not self._verify_parent_connection(conn_obj, msg_class):
@@ -2245,16 +2321,8 @@ class NetworkThread(Thread):
 
         msg_class = msg_obj.__class__
 
-        if msg_class is InitPeerConnection:
-            if self._num_sockets < self.MAX_SOCKETS:
-                self._init_peer_connection(msg_obj)
-            else:
-                # Connection limit reached, re-queue
-                self._queue_network_message(msg_obj)
-
-        elif msg_class is CloseConnection and msg_obj.sock in self._conns:
-            sock = msg_obj.sock
-            self._close_connection(self._conns, sock)
+        if msg_class is CloseConnection:
+            self._close_connection(self._conns, msg_obj.sock)
 
         elif msg_class is CloseConnectionIP:
             self._close_connection_by_ip(msg_obj.addr)
@@ -2348,15 +2416,16 @@ class NetworkThread(Thread):
 
             except OSError as error:
                 self._connect_error(error, conn_obj_in_progress)
-                self._close_connection(self._conns_in_progress, sock, callback=False)
+                self._close_connection(self._conns_in_progress, sock)
 
             return
 
         conn_obj_established = self._conns.get(sock)
 
         if conn_obj_established is not None:
-            if self._is_transferring_download(conn_obj_established):
-                self._set_conn_speed_limit(sock, self._download_limit_split, self._dlimits)
+            if (self._download_limit_split
+                    and self._conns_downloaded.get(conn_obj_established, 0) >= self._download_limit_split):
+                return
 
             try:
                 if not self._read_data(conn_obj_established, current_time):
@@ -2394,8 +2463,9 @@ class NetworkThread(Thread):
         conn_obj_established = self._conns.get(sock)
 
         if conn_obj_established is not None:
-            if self._is_transferring_upload(conn_obj_established):
-                self._set_conn_speed_limit(sock, self._upload_limit_split, self._ulimits)
+            if (self._upload_limit_split
+                    and self._conns_uploaded.get(conn_obj_established, 0) >= self._upload_limit_split):
+                return
 
             try:
                 self._write_data(conn_obj_established, current_time)
@@ -2413,7 +2483,7 @@ class NetworkThread(Thread):
             # We can't call select() when no sockets are registered (WinError 10022)
             return
 
-        for selector_key, selector_events in self._selector.select(timeout=-1):
+        for selector_key, selector_events in self._selector.select(timeout=self.SLEEP_MAX_IDLE):
             sock = selector_key.fileobj
 
             if selector_events & selectors.EVENT_READ:
@@ -2448,78 +2518,100 @@ class NetworkThread(Thread):
         elif init.conn_type == ConnectionType.DISTRIBUTED:
             self._process_distrib_input(conn_obj)
 
-    def _process_queue_messages(self):
-        """All messages sent via socket to the server are previously enqueued in the 'self._queue' object.
-        In this function, we dequeue and process the messages we want to send to the server"""
-        msgs = []
+        if conn_obj.sock is not None and init.sock != conn_obj.sock:
+            log.add_conn(("Received message on secondary connection of type %(type)s to user %(user)s, "
+                          "promoting to primary connection"), {
+                "type": init.conn_type,
+                "user": init.target_user
+            })
+            init.sock = conn_obj.sock
 
-        while self._queue:
-            msgs.append(self._queue.popleft())
+    def _process_outgoing_message(self, msg_obj):
 
-        for msg_obj in msgs:
-            if not self._should_process_queue:
+        msg_type = msg_obj.msg_type
+        log.add_msg_contents(msg_obj, is_outgoing=True)
+
+        if msg_type == MessageType.INIT:
+            process_func = self._process_peer_init_output
+            sock = msg_obj.sock
+
+        elif msg_type == MessageType.INTERNAL:
+            process_func = self._process_internal_messages
+            sock = None
+
+        elif msg_type == MessageType.PEER:
+            process_func = self._process_peer_output
+            sock = msg_obj.sock
+
+            if sock is None:
+                self._send_message_to_peer(msg_obj.username, msg_obj)
                 return
 
-            msg_type = msg_obj.msg_type
-            log.add_msg_contents(msg_obj, is_outgoing=True)
+        elif msg_type == MessageType.DISTRIBUTED:
+            process_func = self._process_distrib_output
+            sock = msg_obj.sock
 
-            if msg_type == MessageType.INIT:
-                process_func = self._process_peer_init_output
-                sock = msg_obj.sock
+        elif msg_type == MessageType.FILE:
+            process_func = self._process_file_output
+            sock = msg_obj.sock
 
-            elif msg_type == MessageType.INTERNAL:
-                process_func = self._process_internal_messages
-                sock = None
+            if sock is None:
+                self._send_message_to_peer(msg_obj.username, msg_obj)
+                return
 
-            elif msg_type == MessageType.PEER:
-                process_func = self._process_peer_output
-                sock = msg_obj.sock
+        elif msg_type == MessageType.SERVER:
+            process_func = self._process_server_output
+            sock = self._server_socket
 
-                if sock is None:
-                    self._send_message_to_peer(msg_obj.username, msg_obj)
-                    continue
+        if sock is not None and sock not in self._conns:
+            log.add_conn("Cannot send the message over the closed connection: %(type)s %(msg_obj)s", {
+                "type": msg_obj.__class__,
+                "msg_obj": msg_obj
+            })
+            return
 
-            elif msg_type == MessageType.DISTRIBUTED:
-                process_func = self._process_distrib_output
-                sock = msg_obj.sock
+        process_func(msg_obj)
 
-            elif msg_type == MessageType.FILE:
-                process_func = self._process_file_output
-                sock = msg_obj.sock
+    def _process_queue_messages(self):
+<<<<<<< HEAD
+        """All messages sent via socket to the server are previously enqueued in the 'self._queue' object.
+        In this function, we dequeue and process the messages we want to send to the server"""
+=======
 
-                if sock is None:
-                    self._send_message_to_peer(msg_obj.username, msg_obj)
-                    continue
+        if not self._message_queue:
+            return
 
-            elif msg_type == MessageType.SERVER:
-                process_func = self._process_server_output
-                sock = self._server_socket
+>>>>>>> fcbf73a10bc0d2d9eabc04c6a0ddbb4c5730a784
+        msgs = []
 
-            if sock is not None and sock not in self._conns:
-                log.add_conn("Cannot send the message over the closed connection: %(type)s %(msg_obj)s", {
-                    "type": msg_obj.__class__,
-                    "msg_obj": msg_obj
-                })
-                continue
+        while self._message_queue:
+            msgs.append(self._message_queue.popleft())
 
-            process_func(msg_obj)
+        for msg_obj in msgs:
+            if self._should_process_queue:
+                self._process_outgoing_message(msg_obj)
 
     def _read_data(self, conn_obj, current_time):
 
         sock = conn_obj.sock
-        limit = self._dlimits.get(sock)
         conn_obj.lastactive = current_time
+        use_download_limit = (self._download_limit_split and self._is_transferring_download(conn_obj))
 
-        data = sock.recv(conn_obj.lastreadlength)
+        if use_download_limit:
+            conn_obj.recv_size = (self._download_limit_split - self._conns_downloaded[conn_obj])
+
+        elif conn_obj.recv_size is None:
+            conn_obj.recv_size = self.SOCKET_READ_BUFFER_SIZE
+
+        data = sock.recv(conn_obj.recv_size)
+        data_length = len(data)
         conn_obj.ibuf.extend(data)
 
-        if limit is None:
-            # Unlimited download data
-            if len(data) >= conn_obj.lastreadlength // 2:
-                conn_obj.lastreadlength *= 2
-        else:
-            # Speed Limited Download data (transfers)
-            conn_obj.lastreadlength = limit
+        if use_download_limit:
+            self._conns_downloaded[conn_obj] += data_length
+
+        elif data_length >= conn_obj.recv_size // 2:
+            conn_obj.recv_size *= 2
 
         if not data:
             return False
@@ -2529,14 +2621,15 @@ class NetworkThread(Thread):
     def _write_data(self, conn_obj, current_time):
 
         sock = conn_obj.sock
-        limit = self._ulimits.get(sock)
         prev_active = conn_obj.lastactive
         conn_obj.lastactive = current_time
 
-        if limit is None:
-            bytes_send = sock.send(conn_obj.obuf)
-        else:
+        if self._upload_limit_split and self._is_transferring_upload(conn_obj):
+            limit = (self._upload_limit_split - self._conns_uploaded[conn_obj])
             bytes_send = sock.send(memoryview(conn_obj.obuf)[:limit])
+            self._conns_uploaded[conn_obj] += bytes_send
+        else:
+            bytes_send = sock.send(conn_obj.obuf)
 
         del conn_obj.obuf[:bytes_send]
 
@@ -2579,7 +2672,7 @@ class NetworkThread(Thread):
                         token=conn_obj.fileupl.token, offset=conn_obj.fileupl.offset,
                         bytes_sent=conn_obj.fileupl.sentbytes
                     )
-                    conn_obj.lastcallback = self._last_conn_stat_time
+                    conn_obj.lastcallback = self._last_cycle_time
 
         if not conn_obj.obuf:
             # Nothing else to send, stop watching connection for writes
@@ -2599,16 +2692,14 @@ class NetworkThread(Thread):
             if not self._should_process_queue:
                 if self._server_timeout_time and (self._server_timeout_time - time.monotonic()) <= 0:
                     self._server_timeout_time = None
-                    events.emit_main_thread("server-timeout")
+                    events.emit_main_thread("server-reconnect")
 
-                time.sleep(0.1)
+                time.sleep(self.SLEEP_MAX_IDLE)
                 continue
 
             current_time = time.monotonic()
 
-            # Send updated connection count to core. Avoid sending too many
-            # updates at once, if there are a lot of connections.
-            if (current_time - self._last_conn_stat_time) >= 1:
+            if (current_time - self._last_cycle_time) >= 1:
                 events.emit_main_thread(
                     "set-connection-stats", total_conns=self._num_sockets,
                     download_bandwidth=self._total_download_bandwidth, upload_bandwidth=self._total_upload_bandwidth
@@ -2617,22 +2708,21 @@ class NetworkThread(Thread):
                 self._check_indirect_connection_timeouts(current_time)
                 self._close_stale_in_progress_conns(current_time)
                 self._close_inactive_connections(current_time)
+                self._init_pending_peer_connections()
+
+                self._conns_downloaded.clear()
+                self._conns_uploaded.clear()
 
                 self._total_download_bandwidth = 0
                 self._total_upload_bandwidth = 0
-                self._last_conn_stat_time = current_time
+
+                self._last_cycle_time = current_time
 
             # Process queue messages
             self._process_queue_messages()
 
             # Check which connections are ready to send/receive data
             self._process_ready_sockets(current_time)
-
-            # Reset transfer speed limits
-            self._ulimits = {}
-            self._dlimits = {}
-
-            self._calc_loops_per_second(current_time)
 
             # Don't exhaust the CPU
             time.sleep(self.SLEEP_MIN_IDLE)

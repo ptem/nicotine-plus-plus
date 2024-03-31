@@ -1,4 +1,4 @@
-# COPYRIGHT (C) 2020-2023 Nicotine+ Contributors
+# COPYRIGHT (C) 2020-2024 Nicotine+ Contributors
 #
 # GNU GENERAL PUBLIC LICENSE
 #    Version 3, 29 June 2007
@@ -18,9 +18,9 @@
 
 __application_name__ = "Nicotine+"
 __application_id__ = "org.nicotine_plus.Nicotine"
-__version__ = "3.3.0.dev6"
+__version__ = "3.3.3rc1"
 __author__ = "Nicotine+ Team"
-__copyright__ = """© 2004–2023 Nicotine+ Contributors
+__copyright__ = """© 2004–2024 Nicotine+ Contributors
 © 2003–2004 Nicotine Contributors
 © 2001–2003 PySoulSeek Contributors"""
 __website_url__ = "https://nicotine-plus.org"

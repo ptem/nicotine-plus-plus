@@ -24,13 +24,28 @@
 import os
 import sys
 
+from unicodedata import category
+from string import punctuation
+
 UINT32_LIMIT = 4294967295
 UINT64_LIMIT = 18446744073709551615
 FILE_SIZE_SUFFIXES = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"]
-PUNCTUATION = ["!", '"', "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", ":", ";", "<", "=", ">",
-               "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~", "–", "—", "‐", "’", "“", "”", "…"]
-ILLEGALPATHCHARS = ["?", ":", ">", "<", "|", "*", '"']
-ILLEGALFILECHARS = ILLEGALPATHCHARS + ["\\", "/"]
+PUNCTUATION = list(sorted(set(
+    list(punctuation)
+    + ["﹢", "﹤", "﹥", "﹦", "＋", "＜", "＝", "＞", "｜", "～"]
+    + [chr(i) for i in range(sys.maxunicode) if category(chr(i)).startswith("P")]
+)))
+ILLEGALPATHCHARS = [
+    # ASCII printable characters
+    "?", ":", ">", "<", "|", "*", '"',
+
+    # ASCII control characters
+    "\u0000", "\u0001", "\u0002", "\u0003", "\u0004", "\u0005", "\u0006", "\u0007", "\u0008", "\u0009",
+    "\u000A", "\u000B", "\u000C", "\u000D", "\u000E", "\u000F", "\u0010", "\u0011", "\u0012", "\u0013",
+    "\u0014", "\u0015", "\u0016", "\u0017", "\u0018", "\u0019", "\u001A", "\u001B", "\u001C", "\u001D",
+    "\u001E", "\u001F"
+]
+ILLEGALFILECHARS = ["\\", "/"] + ILLEGALPATHCHARS
 LONG_PATH_PREFIX = "\\\\?\\"
 REPLACEMENTCHAR = "_"
 TRANSLATE_PUNCTUATION = str.maketrans(dict.fromkeys(PUNCTUATION, " "))
@@ -39,7 +54,14 @@ TRANSLATE_PUNCTUATION = str.maketrans(dict.fromkeys(PUNCTUATION, " "))
 def clean_file(basename):
 
     for char in ILLEGALFILECHARS:
-        basename = basename.replace(char, REPLACEMENTCHAR)
+        if char in basename:
+            basename = basename.replace(char, REPLACEMENTCHAR)
+
+    # Filename can never end with a period or space on Windows machines
+    basename = basename.rstrip(". ")
+
+    if not basename:
+        basename = REPLACEMENTCHAR
 
     return basename
 
@@ -58,7 +80,8 @@ def clean_path(path):
         path = path[3:]
 
     for char in ILLEGALPATHCHARS:
-        path = path.replace(char, REPLACEMENTCHAR)
+        if char in path:
+            path = path.replace(char, REPLACEMENTCHAR)
 
     path = "".join([drive, path])
 
@@ -233,7 +256,8 @@ def censor_text(text, censored_patterns, filler="*"):
     return text
 
 
-def execute_command(command, replacement=None, background=True, returnoutput=False, placeholder="$"):
+def execute_command(command, replacement=None, background=True, returnoutput=False,
+                    hidden=False, placeholder="$"):
     """Executes a string with commands, with partial support for bash-style
     quoting and pipes.
 
@@ -243,6 +267,9 @@ def execute_command(command, replacement=None, background=True, returnoutput=Fal
 
     If background is false the function will wait for all the launched
     processes to end before returning.
+
+    If hidden is true, any window created by the command will be hidden
+    (on Windows).
 
     If the 'replacement' argument is given, every occurrence of 'placeholder'
     will be replaced by 'replacement'.
@@ -271,7 +298,7 @@ def execute_command(command, replacement=None, background=True, returnoutput=Fal
     command = command.strip()
     startupinfo = None
 
-    if sys.platform == "win32":
+    if hidden and sys.platform == "win32":
         from subprocess import STARTF_USESHOWWINDOW, STARTUPINFO
         # Hide console window on Windows
         startupinfo = STARTUPINFO()
@@ -389,15 +416,13 @@ def _open_path(path, is_folder=False, create_folder=False, create_file=False):
 
         path = os.path.abspath(path)
         path_encoded = encode_path(path)
-        result = path.rsplit(".", 1)
+        _path, separator, extension = path.rpartition(".")
         protocol_command = None
         protocol_handlers = config.sections["urls"]["protocols"]
         file_manager_command = config.sections["ui"]["filemanager"]
 
-        if len(result) >= 2:
+        if separator:
             from pynicotine.shares import FileTypes
-
-            extension = result[-1].lower()
 
             if "." + extension in protocol_handlers:
                 protocol = "." + extension

@@ -82,7 +82,7 @@ class Config:
             try:
                 data_folder_path = os.path.join(os.path.normpath(os.environ["APPDATA"]), "nicotine")
             except KeyError:
-                data_folder_path, _basename = os.path.split(sys.argv[0])
+                data_folder_path = os.path.dirname(sys.argv[0])
 
             config_folder_path = os.path.join(data_folder_path, "config")
             return config_folder_path, data_folder_path
@@ -114,7 +114,7 @@ class Config:
         """Create the folder for storing the config file in, if the folder
         doesn't exist."""
 
-        folder_path, _basename = os.path.split(self.config_file_path)
+        folder_path = os.path.dirname(self.config_file_path)
 
         if not folder_path:
             # Only file name specified, use current folder
@@ -311,7 +311,6 @@ class Config:
                 "search_results": True,
                 "max_displayed_results": 1500,
                 "min_search_chars": 3,
-                "remove_special_chars": True,
                 "private_search_results": True
             },
             "ui": {
@@ -530,7 +529,8 @@ class Config:
                 "distrib_ignore",
                 "reopen_tabs",
                 "max_stored_results",
-                "re_filter"
+                "re_filter",
+                "remove_special_chars"
             ),
             "userinfo": (
                 "descrutf8"
@@ -729,10 +729,14 @@ class Config:
             buddy_shares.clear()
 
         # Migrate old media player command to new format (3.3.0)
-        default_player = self.sections["players"].get("default")
+        old_default_player = self.sections["players"].get("default", None)
 
-        if default_player:
-            self.sections["urls"]["protocols"]["audio"] = default_player
+        if old_default_player:
+            self.sections["urls"]["protocols"]["audio"] = old_default_player
+
+        # Enable previously disabled header bar on macOS (3.3.0)
+        if sys.platform == "darwin" and old_default_player is not None:
+            self.sections["ui"]["header_bar"] = True
 
         # Check if server value is valid
         server_addr = self.sections["server"]["server"]

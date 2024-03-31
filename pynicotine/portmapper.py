@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 from pynicotine.config import config
 from pynicotine.events import events
 from pynicotine.logfacility import log
+from pynicotine.utils import execute_command
 
 
 class PortmapError(Exception):
@@ -131,14 +132,12 @@ class NATPMP(BaseImplementation):
 
             return gateway_address
 
-        import subprocess
-
         if sys.platform == "win32":
             gateway_pattern = re.compile(b".*?0.0.0.0 +0.0.0.0 +(.*?) +?[^\n]*\n")
         else:
             gateway_pattern = re.compile(b"(?:default|0\\.0\\.0\\.0|::/0)\\s+([\\w\\.:]+)\\s+.*UG")
 
-        output = subprocess.check_output(["netstat", "-rn"], shell=True)
+        output = execute_command("netstat -rn", returnoutput=True, hidden=True)
         return gateway_pattern.search(output).group(1)
 
     def _request_port_mapping(self, public_port, private_port, lease_duration):
@@ -253,11 +252,17 @@ class UPnP(BaseImplementation):
             control_url = None
 
             try:
+                from urllib.error import HTTPError
                 from urllib.request import urlopen
                 from xml.etree import ElementTree
 
-                with urlopen(location_url, timeout=UPnP.HTTP_REQUEST_TIMEOUT) as response:
-                    response_body = response.read()
+                try:
+                    with urlopen(location_url, timeout=UPnP.HTTP_REQUEST_TIMEOUT) as response:
+                        response_body = response.read()
+
+                except HTTPError as error:
+                    # Received HTTP error, check what the response body says
+                    response_body = error.read()
 
                 log.add_debug("UPnP: Device description response from %s: %s", (location_url, response_body))
 
@@ -324,7 +329,7 @@ class UPnP(BaseImplementation):
             # Create a UDP socket and set its timeout
             with socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM, proto=socket.IPPROTO_UDP) as sock:
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(private_ip))
-                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, UPnP.MULTICAST_TTL)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack("B", UPnP.MULTICAST_TTL))
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
                 sock.settimeout(UPnP.MX_RESPONSE_DELAY + 0.1)  # Larger timeout in case data arrives at the last moment
                 sock.bind((private_ip, 0))
@@ -393,6 +398,7 @@ class UPnP(BaseImplementation):
         period of 12 hours.
         """
 
+        from urllib.error import HTTPError
         from urllib.request import Request
         from urllib.request import urlopen
         from xml.etree import ElementTree
@@ -432,8 +438,15 @@ class UPnP(BaseImplementation):
         log.add_debug("UPnP: Add port mapping request headers: %s", headers)
         log.add_debug("UPnP: Add port mapping request contents: %s", body)
 
-        with urlopen(Request(control_url, data=body, headers=headers), timeout=self.HTTP_REQUEST_TIMEOUT) as response:
-            response_body = response.read()
+        try:
+            request = Request(control_url, data=body, headers=headers)
+            with urlopen(request, timeout=self.HTTP_REQUEST_TIMEOUT) as response:
+                response_body = response.read()
+
+        except HTTPError as error:
+            # Received HTTP error, but response might also contain UPnP error code.
+            # E.g. MikroTik routers that send UPnP error 725 (OnlyPermanentLeasesSupported).
+            response_body = error.read()
 
         xml = ElementTree.fromstring(response_body.decode("utf-8"))
 
@@ -491,6 +504,7 @@ class UPnP(BaseImplementation):
         if not self._service:
             return
 
+        from urllib.error import HTTPError
         from urllib.request import Request
         from urllib.request import urlopen
 
@@ -522,15 +536,22 @@ class UPnP(BaseImplementation):
         log.add_debug("UPnP: Remove port mapping request headers: %s", headers)
         log.add_debug("UPnP: Remove port mapping request contents: %s", body)
 
-        with urlopen(
-                Request(control_url, data=body, headers=headers), timeout=self.HTTP_REQUEST_TIMEOUT) as response:
-            log.add_debug("UPnP: Remove port mapping response: %s", response.read())
+        try:
+            request = Request(control_url, data=body, headers=headers)
+            with urlopen(request, timeout=self.HTTP_REQUEST_TIMEOUT) as response:
+                response_body = response.read()
+
+        except HTTPError as error:
+            # Received HTTP error, but response body might contain useful information
+            response_body = error.read()
+
+        log.add_debug("UPnP: Remove port mapping response: %s", response_body)
 
 
 class PortMapper:
     """Class that handles Port Mapping."""
 
-    RENEWAL_INTERVAL = 14400  # 4 hours
+    RENEWAL_INTERVAL = 7200   # 2 hours
     LEASE_DURATION = 43200    # 12 hours
 
     def __init__(self):
@@ -541,13 +562,6 @@ class PortMapper:
         self._timer = None
         self._natpmp = NATPMP()
         self._upnp = UPnP()
-
-    def set_port(self, port, local_ip_address):
-
-        self._natpmp.set_port(port, local_ip_address)
-        self._upnp.set_port(port, local_ip_address)
-
-        self._has_port = (port is not None)
 
     def _wait_until_ready(self):
 
@@ -577,16 +591,15 @@ class PortMapper:
                 self._upnp.add_port_mapping(self.LEASE_DURATION)
 
             except Exception as upnp_error:
-                log.add_debug("UPnP not available, port forwarding failed: %s", upnp_error)
-
                 log.add(_("%(protocol)s: Failed to forward external port %(external_port)s: %(error)s"), {
                     "protocol": self._active_implementation.NAME,
                     "external_port": self._active_implementation.port,
                     "error": upnp_error
                 })
 
-                from traceback import format_exc
-                log.add_debug(format_exc())
+                if str(upnp_error) != _("No UPnP devices found"):
+                    from traceback import format_exc
+                    log.add_debug(format_exc())
 
                 self._active_implementation = None
                 self._is_mapping_port = False
@@ -622,6 +635,20 @@ class PortMapper:
         self._active_implementation = None
         self._is_mapping_port = False
 
+    def _start_renewal_timer(self):
+        self._cancel_renewal_timer()
+        self._timer = events.schedule(delay=self.RENEWAL_INTERVAL, callback=self.add_port_mapping)
+
+    def _cancel_renewal_timer(self):
+        events.cancel_scheduled(self._timer)
+
+    def set_port(self, port, local_ip_address):
+
+        self._natpmp.set_port(port, local_ip_address)
+        self._upnp.set_port(port, local_ip_address)
+
+        self._has_port = (port is not None)
+
     def add_port_mapping(self, blocking=False):
 
         # Check if we want to do a port mapping
@@ -637,26 +664,15 @@ class PortMapper:
         else:
             Thread(target=self._add_port_mapping, name="AddPortmapping", daemon=True).start()
 
-        self._start_timer()
+        # Renew port mapping entry regularly
+        self._start_renewal_timer()
 
     def remove_port_mapping(self, blocking=False):
 
-        self._cancel_timer()
+        self._cancel_renewal_timer()
 
         if blocking:
             self._remove_port_mapping()
             return
 
         Thread(target=self._remove_port_mapping, name="RemovePortmapping", daemon=True).start()
-
-    def _start_timer(self):
-        """Port mapping entries last 12 hours, we need to regularly renew them.
-
-        The default interval is 4 hours.
-        """
-
-        self._cancel_timer()
-        self._timer = events.schedule(delay=self.RENEWAL_INTERVAL, callback=self.add_port_mapping)
-
-    def _cancel_timer(self):
-        events.cancel_scheduled(self._timer)

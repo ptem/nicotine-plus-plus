@@ -1,4 +1,4 @@
-# COPYRIGHT (C) 2020-2023 Nicotine+ Contributors
+# COPYRIGHT (C) 2020-2024 Nicotine+ Contributors
 # COPYRIGHT (C) 2009-2011 quinox <quinox@users.sf.net>
 # COPYRIGHT (C) 2007-2009 daelstorm <daelstorm@gmail.com>
 # COPYRIGHT (C) 2003-2004 Hyriand <hyriand@thegraveyard.org>
@@ -122,10 +122,11 @@ class FileAttribute:
 
 class InternalMessage:
     __slots__ = ()
+    __excluded_attrs__ = {}
     msg_type = MessageType.INTERNAL
 
     def __str__(self):
-        attrs = {s: self.__getattribute__(s) for s in self.__slots__}
+        attrs = {s: self.__getattribute__(s) for s in self.__slots__ if s not in self.__excluded_attrs__}
         return f"<{self.msg_type} - {self.__class__.__name__}> {attrs}"
 
 
@@ -152,6 +153,7 @@ class ServerConnect(InternalMessage):
 
     __slots__ = ("addr", "login", "interface_name", "interface_address", "listen_port",
                  "portmapper")
+    __excluded_attrs__ = {"login"}
 
     def __init__(self, addr=None, login=None, interface_name=None, interface_address=None,
                  listen_port=None, portmapper=None):
@@ -168,14 +170,6 @@ class ServerDisconnect(InternalMessage):
 
     def __init__(self, manual_disconnect=False):
         self.manual_disconnect = manual_disconnect
-
-
-class InitPeerConnection(InternalMessage):
-    __slots__ = ("addr", "init")
-
-    def __init__(self, addr=None, init=None):
-        self.addr = addr
-        self.init = init
 
 
 class EmitNetworkMessageEvents(InternalMessage):
@@ -247,6 +241,7 @@ class SlskMessage:
     """This is a parent class for all protocol messages."""
 
     __slots__ = ()
+    __excluded_attrs__ = {}
     msg_type = None
 
     @staticmethod
@@ -292,16 +287,20 @@ class SlskMessage:
     @staticmethod
     def unpack_bytes(message, start=0):
 
-        length = UINT32_UNPACK(message, start)[0]
-        content = message[start + 4:start + length + 4]
+        length, = UINT32_UNPACK(message, start)
+        start += 4
+        end = start + length
+        content = message[start:end]
 
-        return start + 4 + length, content.tobytes()
+        return end, content.tobytes()
 
     @staticmethod
     def unpack_string(message, start=0):
 
-        length = UINT32_UNPACK(message, start)[0]
-        content = message[start + 4:start + length + 4].tobytes()
+        length, = UINT32_UNPACK(message, start)
+        start += 4
+        end = start + length
+        content = message[start:end].tobytes()
 
         try:
             string = content.decode("utf-8")
@@ -310,7 +309,7 @@ class SlskMessage:
             # Legacy strings
             string = content.decode("latin-1")
 
-        return start + 4 + length, string
+        return end, string
 
     @staticmethod
     def unpack_bool(message, start=0):
@@ -318,7 +317,8 @@ class SlskMessage:
 
     @staticmethod
     def unpack_ip(message, start=0):
-        return start + 4, inet_ntoa(message[start:start + 4][::-1].tobytes())
+        end = start + 4
+        return end, inet_ntoa(message[start:end].tobytes()[::-1])
 
     @staticmethod
     def unpack_uint8(message, start=0):
@@ -326,22 +326,26 @@ class SlskMessage:
 
     @staticmethod
     def unpack_uint16(message, start=0):
-        return start + 4, UINT16_UNPACK(message, start)[0]
+        result, = UINT16_UNPACK(message, start)
+        return start + 4, result
 
     @staticmethod
     def unpack_int32(message, start=0):
-        return start + 4, INT32_UNPACK(message, start)[0]
+        result, = INT32_UNPACK(message, start)
+        return start + 4, result
 
     @staticmethod
     def unpack_uint32(message, start=0):
-        return start + 4, UINT32_UNPACK(message, start)[0]
+        result, = UINT32_UNPACK(message, start)
+        return start + 4, result
 
     @staticmethod
     def unpack_uint64(message, start=0):
-        return start + 8, UINT64_UNPACK(message, start)[0]
+        result, = UINT64_UNPACK(message, start)
+        return start + 8, result
 
     def __str__(self):
-        attrs = {s: self.__getattribute__(s) for s in self.__slots__}
+        attrs = {s: self.__getattribute__(s) for s in self.__slots__ if s not in self.__excluded_attrs__}
         return f"<{self.msg_type} - {self.__class__.__name__}> {attrs}"
 
 
@@ -360,48 +364,57 @@ class FileListMessage(SlskMessage):
     def pack_file_info(cls, fileinfo):
 
         msg = bytearray()
+        virtual_file_path, size, quality, duration = fileinfo
+        bitrate = is_vbr = samplerate = bitdepth = None
+
+        if quality is not None:
+            bitrate, is_vbr, samplerate, bitdepth = quality
+
         msg.extend(cls.pack_uint8(1))
-        msg.extend(cls.pack_string(fileinfo[0]))
-        msg.extend(cls.pack_uint64(fileinfo[1]))
-        msg.extend(cls.pack_string(""))
+        msg.extend(cls.pack_string(virtual_file_path))
+        msg.extend(cls.pack_uint64(size))
+        msg.extend(cls.pack_uint32(0))  # empty ext
 
-        if fileinfo[2] is None or fileinfo[3] is None:
-            # No metadata
-            msg.extend(cls.pack_uint32(0))
+        num_attrs = 0
+        msg_attrs = bytearray()
+
+        is_lossless = bitdepth is not None
+
+        if is_lossless:
+            if duration is not None:
+                msg_attrs.extend(cls.pack_uint32(1))
+                msg_attrs.extend(cls.pack_uint32(duration))
+                num_attrs += 1
+
+            if samplerate is not None:
+                msg_attrs.extend(cls.pack_uint32(4))
+                msg_attrs.extend(cls.pack_uint32(samplerate))
+                num_attrs += 1
+
+            if bitdepth is not None:
+                msg_attrs.extend(cls.pack_uint32(5))
+                msg_attrs.extend(cls.pack_uint32(bitdepth))
+                num_attrs += 1
         else:
-            # NumAttributes
-            msg.extend(cls.pack_uint32(3))
+            if bitrate is not None:
+                msg_attrs.extend(cls.pack_uint32(0))
+                msg_attrs.extend(cls.pack_uint32(bitrate))
+                num_attrs += 1
 
-            audio_info = fileinfo[2]
-            bitdepth = len(audio_info) > 3 and audio_info[3]
+            if duration is not None:
+                msg_attrs.extend(cls.pack_uint32(1))
+                msg_attrs.extend(cls.pack_uint32(duration))
+                num_attrs += 1
 
-            # Lossless audio file
-            if bitdepth:
-                # Duration
-                msg.extend(cls.pack_uint32(1))
-                msg.extend(cls.pack_uint32(fileinfo[3] or 0))
+            if bitrate is not None:
+                msg_attrs.extend(cls.pack_uint32(2))
+                msg_attrs.extend(cls.pack_uint32(is_vbr))
+                num_attrs += 1
 
-                # Sample rate
-                msg.extend(cls.pack_uint32(4))
-                msg.extend(cls.pack_uint32(audio_info[2] or 0))
+        msg.extend(cls.pack_uint32(num_attrs))
 
-                # Bit depth
-                msg.extend(cls.pack_uint32(5))
-                msg.extend(cls.pack_uint32(bitdepth or 0))
-
-            # Lossy audio file
-            else:
-                # Bitrate
-                msg.extend(cls.pack_uint32(0))
-                msg.extend(cls.pack_uint32(audio_info[0] or 0))
-
-                # Duration
-                msg.extend(cls.pack_uint32(1))
-                msg.extend(cls.pack_uint32(fileinfo[3] or 0))
-
-                # VBR
-                msg.extend(cls.pack_uint32(2))
-                msg.extend(cls.pack_uint32(audio_info[1] or 0))
+        if msg_attrs:
+            msg.extend(msg_attrs)
 
         return msg
 
@@ -535,30 +548,30 @@ class RecommendationsMessage(SlskMessage):
     __slots__ = ()
 
     @classmethod
-    def parse_recommendations(cls, message, pos=0):
-        recommendations = []
-        unrecommendations = []
-
+    def populate_recommendations(cls, recommendations, unrecommendations, message, pos=0):
         pos, num = cls.unpack_uint32(message, pos)
 
         for _ in range(num):
             pos, key = cls.unpack_string(message, pos)
             pos, rating = cls.unpack_int32(message, pos)
 
-            # The server also includes unrecommendations here for some reason, don't add them
-            if rating >= 0:
-                recommendations.append((key, rating))
+            lst = recommendations if rating >= 0 else unrecommendations
+            item = (key, rating)
+
+            if item not in lst:
+                lst.append(item)
+
+        return pos
+
+    @classmethod
+    def parse_recommendations(cls, message, pos=0):
+        recommendations = []
+        unrecommendations = []
+
+        pos = cls.populate_recommendations(recommendations, unrecommendations, message, pos)
 
         if message[pos:]:
-            pos, num2 = cls.unpack_uint32(message, pos)
-
-            for _ in range(num2):
-                pos, key = cls.unpack_string(message, pos)
-                pos, rating = cls.unpack_int32(message, pos)
-
-                # The server also includes recommendations here for some reason, don't add them
-                if rating < 0:
-                    unrecommendations.append((key, rating))
+            pos = cls.populate_recommendations(recommendations, unrecommendations, message, pos)
 
         return pos, recommendations, unrecommendations
 
@@ -632,7 +645,8 @@ class Login(ServerMessage):
     """
 
     __slots__ = ("username", "passwd", "version", "minorversion", "success", "reason",
-                 "banner", "ip_address", "local_address", "checksum", "is_supporter")
+                 "banner", "ip_address", "local_address", "is_supporter")
+    __excluded_attrs__ = {"passwd"}
 
     def __init__(self, username=None, passwd=None, version=None, minorversion=None):
         self.username = username
@@ -644,7 +658,6 @@ class Login(ServerMessage):
         self.banner = None
         self.ip_address = None
         self.local_address = None
-        self.checksum = None
         self.is_supporter = None
 
     def make_network_message(self):
@@ -677,7 +690,7 @@ class Login(ServerMessage):
             # Soulfind server support
             return
 
-        pos, self.checksum = self.unpack_string(message, pos)  # MD5 hexdigest of the password you sent
+        pos, _checksum = self.unpack_string(message, pos)  # MD5 hexdigest of the password you sent
 
         if not message[pos:]:
             # Soulfind server support
@@ -2554,6 +2567,7 @@ class ChangePassword(ServerMessage):
     """
 
     __slots__ = ("password",)
+    __excluded_attrs__ = {"password"}
 
     def __init__(self, password=None):
         self.password = password
@@ -2562,7 +2576,7 @@ class ChangePassword(ServerMessage):
         return self.pack_string(self.password)
 
     def parse_network_message(self, message):
-        _pos, self.password = self.unpack_string(message)
+        _pos, _password = self.unpack_string(message)
 
 
 class PrivateRoomAddOperator(ServerMessage):
@@ -2780,6 +2794,27 @@ class RelatedSearch(ServerMessage):
             self.terms.append((term, score))
 
 
+class ExcludedSearchPhrases(ServerMessage):
+    """Server code 160.
+
+    The server sends a list of phrases not allowed on the search network.
+    File paths containing such phrases should be excluded when responding
+    to search requests.
+    """
+
+    __slots__ = ("phrases",)
+
+    def __init__(self):
+        self.phrases = []
+
+    def parse_network_message(self, message):
+        pos, num = self.unpack_uint32(message)
+
+        for _ in range(num):
+            pos, phrase = self.unpack_string(message, pos)
+            self.phrases.append(phrase)
+
+
 class CantConnectToPeer(ServerMessage):
     """Server code 1001.
 
@@ -2869,11 +2904,12 @@ class PeerInit(PeerInitMessage):
 
     __slots__ = ("sock", "init_user", "target_user", "conn_type", "indirect", "token", "outgoing_msgs")
 
-    def __init__(self, sock=None, init_user=None, target_user=None, conn_type=None, indirect=False, token=0):
+    def __init__(self, sock=None, init_user=None, target_user=None, conn_type=None, indirect=False, token=None):
         self.sock = sock
         self.init_user = init_user      # username of peer who initiated the message
         self.target_user = target_user  # username of peer we're connected to
         self.conn_type = conn_type
+
         self.indirect = indirect
         self.token = token
         self.outgoing_msgs = []
@@ -2882,7 +2918,7 @@ class PeerInit(PeerInitMessage):
         msg = bytearray()
         msg.extend(self.pack_string(self.init_user))
         msg.extend(self.pack_string(self.conn_type))
-        msg.extend(self.pack_uint32(self.token))
+        msg.extend(self.pack_uint32(0))
 
         return msg
 
@@ -2982,7 +3018,7 @@ class SharedFileListResponse(PeerMessage):
         share_groups = []
         private_share_groups = []
 
-        if self.permission_level:
+        if self.permission_level and self.public_shares:
             share_groups.append(self.public_shares)
 
         if self.permission_level in {PermissionLevel.BUDDY, PermissionLevel.TRUSTED} and self.buddy_shares:
@@ -3027,8 +3063,8 @@ class SharedFileListResponse(PeerMessage):
                 pos, code = self.unpack_uint8(message, pos)
                 pos, name = self.unpack_string(message, pos)
                 pos, size = FileListMessage.parse_file_size(message, pos)
-                pos, _ext = self.unpack_string(message, pos)  # Obsolete, ignore
-                pos, attrs = FileListMessage.unpack_file_attributes(message, pos)
+                pos, ext_len = self.unpack_uint32(message, pos)  # Obsolete, ignore
+                pos, attrs = FileListMessage.unpack_file_attributes(message, pos + ext_len)
 
                 files.append((code, name, size, ext, attrs))
 
@@ -3127,10 +3163,31 @@ class FileSearchResponse(PeerMessage):
         return zlib.compress(msg)
 
     def parse_network_message(self, message):
-        message = memoryview(zlib.decompress(message))
-        self._parse_network_message(message)
+        decompressor = zlib.decompressobj()
+        pos, username_len = self.unpack_uint32(decompressor.decompress(message, 4))
+        pos, self.token = self.unpack_uint32(
+            decompressor.decompress(decompressor.unconsumed_tail, username_len + 4), username_len)
 
-    def _parse_result_list(self, message, pos):
+        if self.token not in SEARCH_TOKENS_ALLOWED:
+            # Results are no longer accepted for this search token, stop parsing message
+            self.list = []
+            return
+
+        # Optimization: only decompress the rest of the message when needed
+        message_mem = memoryview(decompressor.decompress(decompressor.unconsumed_tail))
+
+        pos, self.list = self._parse_result_list(message_mem)
+        pos, self.freeulslots = self.unpack_bool(message_mem, pos)
+        pos, self.ulspeed = self.unpack_uint32(message_mem, pos)
+        pos, self.inqueue = self.unpack_uint32(message_mem, pos)
+
+        if message_mem[pos:]:
+            pos, self.unknown = self.unpack_uint32(message_mem, pos)
+
+        if message_mem[pos:]:
+            pos, self.privatelist = self._parse_result_list(message_mem, pos)
+
+    def _parse_result_list(self, message, pos=0):
         pos, nfiles = self.unpack_uint32(message, pos)
 
         ext = None
@@ -3140,8 +3197,8 @@ class FileSearchResponse(PeerMessage):
             pos, code = self.unpack_uint8(message, pos)
             pos, name = self.unpack_string(message, pos)
             pos, size = FileListMessage.parse_file_size(message, pos)
-            pos, _ext = self.unpack_string(message, pos)  # Obsolete, ignore
-            pos, attrs = FileListMessage.unpack_file_attributes(message, pos)
+            pos, ext_len = self.unpack_uint32(message, pos)  # Obsolete, ignore
+            pos, attrs = FileListMessage.unpack_file_attributes(message, pos + ext_len)
 
             results.append((code, name.replace("/", "\\"), size, ext, attrs))
 
@@ -3149,27 +3206,6 @@ class FileSearchResponse(PeerMessage):
             results.sort(key=lambda x: strxfrm(x[1]))
 
         return pos, results
-
-    def _parse_network_message(self, message):
-        pos, self.search_username = self.unpack_string(message)
-        pos, self.token = self.unpack_uint32(message, pos)
-
-        if self.token not in SEARCH_TOKENS_ALLOWED:
-            # Results are no longer accepted for this search token, stop parsing message
-            self.list = []
-            return
-
-        pos, self.list = self._parse_result_list(message, pos)
-
-        pos, self.freeulslots = self.unpack_bool(message, pos)
-        pos, self.ulspeed = self.unpack_uint32(message, pos)
-        pos, self.inqueue = self.unpack_uint32(message, pos)
-
-        if message[pos:]:
-            pos, self.unknown = self.unpack_uint32(message, pos)
-
-        if message[pos:]:
-            pos, self.privatelist = self._parse_result_list(message, pos)
 
 
 class UserInfoRequest(PeerMessage):
@@ -3282,17 +3318,18 @@ class FolderContentsRequest(PeerMessage):
     We ask the peer to send us the contents of a single folder.
     """
 
-    __slots__ = ("dir", "token")
+    __slots__ = ("dir", "token", "legacy_client")
 
-    def __init__(self, directory=None, token=None):
+    def __init__(self, directory=None, token=None, legacy_client=False):
         PeerMessage.__init__(self)
         self.dir = directory
         self.token = token
+        self.legacy_client = legacy_client
 
     def make_network_message(self):
         msg = bytearray()
         msg.extend(self.pack_uint32(self.token))
-        msg.extend(self.pack_string(self.dir, is_legacy=True))
+        msg.extend(self.pack_string(self.dir, is_legacy=self.legacy_client))
 
         return msg
 
@@ -3339,10 +3376,13 @@ class FolderContentsResponse(PeerMessage):
                 pos, code = self.unpack_uint8(message, pos)
                 pos, name = self.unpack_string(message, pos)
                 pos, size = self.unpack_uint64(message, pos)
-                pos, _ext = self.unpack_string(message, pos)  # Obsolete, ignore
-                pos, attrs = FileListMessage.unpack_file_attributes(message, pos)
+                pos, ext_len = self.unpack_uint32(message, pos)  # Obsolete, ignore
+                pos, attrs = FileListMessage.unpack_file_attributes(message, pos + ext_len)
 
                 folders[directory].append((code, name, size, ext, attrs))
+
+            if nfiles > 1:
+                folders[directory].sort(key=lambda x: strxfrm(x[1]))
 
         self.list = folders
 
@@ -3840,6 +3880,7 @@ NETWORK_MESSAGE_EVENTS = {
     CheckPrivileges: "check-privileges",
     ConnectToPeer: "connect-to-peer",
     DistribSearch: "file-search-request-distributed",
+    ExcludedSearchPhrases: "excluded-search-phrases",
     FileSearch: "file-search-request-server",
     FileSearchResponse: "file-search-response",
     FileTransferInit: "file-transfer-init",
@@ -3995,6 +4036,7 @@ SERVER_MESSAGE_CODES = {
     LeaveGlobalRoom: 151,         # Deprecated
     GlobalRoomMessage: 152,       # Deprecated
     RelatedSearch: 153,           # Obsolete
+    ExcludedSearchPhrases: 160,
     CantConnectToPeer: 1001,
     CantCreateRoom: 1003
 }
