@@ -28,7 +28,6 @@ import os
 import re
 import shutil
 import time
-import json
 
 from collections import defaultdict
 

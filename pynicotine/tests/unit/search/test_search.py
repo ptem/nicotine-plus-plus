@@ -87,25 +87,24 @@ class SearchTest(TestCase):
         core.search.token = increment_token(core.search.token)
         self.assertEqual(old_token, core.search.token - 1)
 
-    #TO BE DELETED
-    # def test_wishlist_add(self):
-    #     """Test that items are added to the wishlist properly."""
+    def test_wishlist_add(self):
+        """Test that items are added to the wishlist properly."""
 
-    #     old_token = core.search.token
+        old_token = core.search.token
 
-    #     # First item
+        # First item
 
-    #     core.search.add_wish(SEARCH_TEXT)
-    #     self.assertEqual(config.sections["server"]["autosearch"][0], SEARCH_TEXT)
-    #     self.assertEqual(core.search.token, old_token + 1)
-    #     self.assertEqual(core.search.token, core.search.token)
+        core.search.add_wish(SEARCH_TEXT)
+        self.assertEqual(config.sections["server"]["autosearch"][0], SEARCH_TEXT)
+        self.assertEqual(core.search.token, old_token + 1)
+        self.assertEqual(core.search.token, core.search.token)
 
-    #     # Second item
+        # Second item
 
-    #     new_item = f"{SEARCH_TEXT}1"
-    #     core.search.add_wish(new_item)
-    #     self.assertEqual(config.sections["server"]["autosearch"][0], SEARCH_TEXT)
-    #     self.assertEqual(config.sections["server"]["autosearch"][1], new_item)
+        new_item = f"{SEARCH_TEXT}1"
+        core.search.add_wish(new_item)
+        self.assertEqual(config.sections["server"]["autosearch"][0], SEARCH_TEXT)
+        self.assertEqual(config.sections["server"]["autosearch"][1], new_item)
 
     def test_create_search_result_list(self):
         """Test creating search result lists from the word index."""

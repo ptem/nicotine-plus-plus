@@ -18,6 +18,27 @@ import time
 from typing import Optional
 import json
 
+class SearchResult:
+
+    # __slots__ = {"user", "ip_address", "port", "has_free_slots", "inqueue", "ulspeed", "file_name", "file_extension", "file_path", "file_size", "file_h_length", "bitrate", "search_similarity", "file_attributes"}
+
+    def __init__(self, user, ip_address, port,has_free_slots, inqueue, ulspeed, file_name, file_extension, file_path, file_size, file_h_length, bitrate, search_similarity, file_attributes):
+
+        self.user = user
+        self.ip_address = ip_address
+        self.port = port
+        self.has_free_slots = has_free_slots
+        self.inqueue = inqueue
+        self.ulspeed = ulspeed
+        self.file_name = file_name
+        self.file_extension = file_extension
+        self.file_path = file_path
+        self.file_size = file_size
+        self.file_h_length = file_h_length
+        self.bitrate = bitrate
+        self.search_similarity = search_similarity
+        self.file_attributes = file_attributes
+
 class WebApiSearchResult(BaseModel):
     token: int
     search_term: str
@@ -53,8 +74,8 @@ class WebApi:
             ("quit", self._quit),
             ("start", self._start),
             # ("file-search-response", self._file_search_response),
-            ("download-notification", self._download_notification),
-            ("download-notification-web-api", self._download_notification_web_api)
+            # ("download-notification", self._download_notification),
+            # ("download-notification-web-api", self._download_notification_web_api)
         ):
             events.connect(event_name, callback)
 
@@ -79,26 +100,24 @@ class WebApi:
     
     def _parse_search_response(self, msg, search):
 
-        def get_string_similarity(a, b):
-            return SequenceMatcher(None, a, b).ratio()
+            def get_string_similarity(a, b):
+                return SequenceMatcher(None, a, b).ratio()
 
-        items_to_return = []
+            items_to_return = []
 
-        for _code, file_path, size, _ext, file_attributes, *_unused in msg.list:
-            file_path_split = file_path.split("\\")
-            file_path_split = reversed(file_path_split)
-            file_name = next(file_path_split)
-            file_extension = pathlib.Path(file_name).suffix[1:]
-            h_quality, bitrate, h_length, length = FileListMessage.parse_audio_quality_length(size, file_attributes)
-            if msg.freeulslots:
-                inqueue = 0
-            else:
-                inqueue = msg.inqueue or 1  # Ensure value is always >= 1
-            search_similarity = get_string_similarity(search.term, file_name)
+            for _code, file_path, size, _ext, file_attributes, *_unused in msg.list:
+                file_path_split = file_path.split("\\")
+                file_path_split = reversed(file_path_split)
+                file_name = next(file_path_split)
+                file_extension = pathlib.Path(file_name).suffix[1:]
+                h_quality, bitrate, h_length, length = FileListMessage.parse_audio_quality_length(size, file_attributes)
+                if msg.freeulslots:
+                    inqueue = 0
+                else:
+                    inqueue = msg.inqueue or 1  # Ensure value is always >= 1
+                search_similarity = get_string_similarity(search.term, file_name)
 
-            items_to_return.append(WebApiSearchResult(
-                                        token = msg.token,
-                                        search_term=search.term,
+                item = WebApiSearchResult(
                                         user = msg.username,
                                         ip_address = msg.addr[0],
                                         port = msg.addr[1],
@@ -109,13 +128,15 @@ class WebApi:
                                         file_extension=file_extension,
                                         file_path = file_path,
                                         file_size = size,
-                                        file_h_lenght = h_length,
+                                        file_h_length = h_length,
                                         bitrate = bitrate,
                                         search_similarity = search_similarity,
                                         file_attributes=file_attributes
-                                   ))
-        
-        return items_to_return
+                                    )
+
+                items_to_return.append(item)
+            
+            return items_to_return
                 
     def _file_search_response(self, msg):
 

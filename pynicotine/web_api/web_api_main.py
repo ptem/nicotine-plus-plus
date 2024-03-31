@@ -86,7 +86,7 @@ def read_root():
 @app.get("/search/global")
 async def do_web_api_global_search(search: WebApiSearchModel):
     # search_token = core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
-    search_token = core.search.do_search(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
+    search_token = core.search.do_search(search.search_term, mode="global")
     await asyncio.sleep(search.wait_for_seconds)
     search_req = core.search.searches.get(search_token)
     if search_req:

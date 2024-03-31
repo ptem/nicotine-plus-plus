@@ -23,15 +23,9 @@
 
 from itertools import islice
 from operator import itemgetter
-from typing import Optional, List
-from difflib import SequenceMatcher
-import pathlib
-import json
-
 from random import random
 from shlex import shlex
 from string import punctuation
-
 
 from pynicotine import slskmessages
 from pynicotine.config import config
@@ -40,7 +34,6 @@ from pynicotine.events import events
 from pynicotine.logfacility import log
 from pynicotine.shares import PermissionLevel
 from pynicotine.utils import TRANSLATE_PUNCTUATION
-from pynicotine.slskmessages import FileListMessage
 
 
 class SearchRequest:
@@ -50,7 +43,6 @@ class SearchRequest:
     def __init__(self, token=None, term=None, included_words=None, excluded_words=None, mode="global",
                  room=None, users=None, is_ignored=False):
 
-
         self.token = token
         self.term = term
         self.included_words = included_words
@@ -59,39 +51,7 @@ class SearchRequest:
         self.room = room
         self.users = users
         self.is_ignored = is_ignored
-        # self.search_filters = search_filters
-        # self.smart_filters = smart_filters
 
-class SearchResult:
-
-    # __slots__ = {"user", "ip_address", "port", "has_free_slots", "inqueue", "ulspeed", "file_name", "file_extension", "file_path", "file_size", "file_h_length", "bitrate", "search_similarity", "file_attributes"}
-
-    def __init__(self, user, ip_address, port,has_free_slots, inqueue, ulspeed, file_name, file_extension, file_path, file_size, file_h_length, bitrate, search_similarity, file_attributes):
-
-        self.user = user
-        self.ip_address = ip_address
-        self.port = port
-        self.has_free_slots = has_free_slots
-        self.inqueue = inqueue
-        self.ulspeed = ulspeed
-        self.file_name = file_name
-        self.file_extension = file_extension
-        self.file_path = file_path
-        self.file_size = file_size
-        self.file_h_length = file_h_length
-        self.bitrate = bitrate
-        self.search_similarity = search_similarity
-        self.file_attributes = file_attributes
-
-#TO BE DELETED
-# class WebApiSearchRequest(SearchRequest):
-    
-#     __slots__ = {"search_filters", "smart_filters"}
-
-#     def __init__(self, token=None, term=None, mode=None, room=None, users=None, is_ignored=False, search_filters=None, smart_filters=None):
-#         super().__init__(token, term, mode, room, users, is_ignored)
-#         self.search_filters = search_filters
-#         self.smart_filters = smart_filters
 
 class Search:
 
@@ -108,7 +68,7 @@ class Search:
         self.wishlist_interval = 0
         self._wishlist_timer_id = None
 
-
+        # Create wishlist searches
         for term in config.sections["server"]["autosearch"]:
             self.token = slskmessages.increment_token(self.token)
             term, _term_no_quotes, included_words, excluded_words = self.sanitize_search_term(term)
@@ -124,8 +84,8 @@ class Search:
             ("file-search-request-server", self._file_search_request_server),
             ("file-search-response", self._file_search_response),
             ("quit", self._quit),
-            ("server-disconnect", self._server_disconnect)
-            # ("set-wishlist-interval", self._set_wishlist_interval)
+            ("server-disconnect", self._server_disconnect),
+            ("set-wishlist-interval", self._set_wishlist_interval)
         ):
             events.connect(event_name, callback)
 
@@ -169,7 +129,7 @@ class Search:
         )
         self.add_allowed_token(self.token)
         return search
-        
+
     def remove_search(self, token):
 
         self.remove_allowed_token(token)
@@ -387,7 +347,7 @@ class Search:
                 search.is_ignored = False
                 self.do_wishlist_search(search.token, term_no_quotes)
                 break
-    
+
     def add_wish(self, wish):
 
         if not wish:
@@ -446,46 +406,6 @@ class Search:
             "phrases": str(msg.phrases)
         })
 
-    def _parse_search_response(self, msg, search):
-
-                def get_string_similarity(a, b):
-                    return SequenceMatcher(None, a, b).ratio()
-
-                items_to_return = []
-
-                for _code, file_path, size, _ext, file_attributes, *_unused in msg.list:
-                    file_path_split = file_path.split("\\")
-                    file_path_split = reversed(file_path_split)
-                    file_name = next(file_path_split)
-                    file_extension = pathlib.Path(file_name).suffix[1:]
-                    h_quality, bitrate, h_length, length = FileListMessage.parse_audio_quality_length(size, file_attributes)
-                    if msg.freeulslots:
-                        inqueue = 0
-                    else:
-                        inqueue = msg.inqueue or 1  # Ensure value is always >= 1
-                    search_similarity = get_string_similarity(search.term, file_name)
-
-                    item = SearchResult(
-                                            user = msg.username,
-                                            ip_address = msg.addr[0],
-                                            port = msg.addr[1],
-                                            has_free_slots = msg.freeulslots,
-                                            inqueue = inqueue,
-                                            ulspeed = msg.ulspeed or 0, 
-                                            file_name = file_name,
-                                            file_extension=file_extension,
-                                            file_path = file_path,
-                                            file_size = size,
-                                            file_h_length = h_length,
-                                            bitrate = bitrate,
-                                            search_similarity = search_similarity,
-                                            file_attributes=file_attributes
-                                        )
-
-                    items_to_return.append(item)
-                
-                return items_to_return
-
     def _file_search_response(self, msg):
         """Peer code 9.
         
@@ -510,10 +430,6 @@ class Search:
 
         if core.network_filter.is_user_ip_ignored(username, ip_address):
             msg.token = None
-
-        # search.results = self._parse_search_response(msg, search)
-        for response in self._parse_search_response(msg, search):
-            search.results.append(response)
 
     def _file_search_request_server(self, msg):
         """Server code 26, 42 and 120."""

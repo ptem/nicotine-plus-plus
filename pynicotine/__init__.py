@@ -219,7 +219,11 @@ def run():
 
     # Initialize GTK-based GUI
     if not headless:
-        log.add("Nicotine plus plus is a headless version of the full Nicotine software. It is not developed to run with GUI.")
+        from pynicotine import gtkgui as application
+        exit_code = application.run(hidden, ci_mode, multi_instance)
+
+        if exit_code is not None:
+            return exit_code
 
     # Run without a GUI
     from pynicotine import headless as application

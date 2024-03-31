@@ -71,8 +71,8 @@ class Core:
                 "error_handler", "signal_handler", "cli", "portmapper", "network_thread", "shares", "users",
                 "notifications", "network_filter", "now_playing", "statistics", "update_checker",
                 "search", "downloads", "uploads", "interests", "userbrowse", "userinfo", "buddies",
-                "chatrooms", "privatechat", "pluginhandler",
-                "web_api"
+                "chatrooms", "privatechat", "pluginhandler"
+                ,"web_api"
             }
 
         self.enabled_components = enabled_components
