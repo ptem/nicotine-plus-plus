@@ -1,4 +1,4 @@
-# COPYRIGHT (C) 2021-2023 Nicotine+ Contributors
+# COPYRIGHT (C) 2021-2024 Nicotine+ Contributors
 #
 # GNU GENERAL PUBLIC LICENSE
 #    Version 3, 29 June 2007
@@ -17,13 +17,21 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import shutil
 
 from unittest import TestCase
 
 from pynicotine import slskmessages
 from pynicotine.config import config
 from pynicotine.core import core
+from pynicotine.downloads import RequestedFolder
 from pynicotine.transfers import TransferStatus
+from pynicotine.userbrowse import BrowsedUser
+
+CURRENT_FOLDER_PATH = os.path.dirname(os.path.realpath(__file__))
+DATA_FOLDER_PATH = os.path.join(CURRENT_FOLDER_PATH, "temp_data")
+TRANSFERS_BASENAME = "downloads.json"
+TRANSFERS_FILE_PATH = os.path.join(CURRENT_FOLDER_PATH, TRANSFERS_BASENAME)
 
 
 class DownloadsTest(TestCase):
@@ -32,23 +40,31 @@ class DownloadsTest(TestCase):
 
     def setUp(self):
 
-        config.data_folder_path = os.path.dirname(os.path.realpath(__file__))
-        config.config_file_path = os.path.join(config.data_folder_path, "temp_config")
+        config.data_folder_path = DATA_FOLDER_PATH
+        config.config_file_path = os.path.join(DATA_FOLDER_PATH, "temp_config")
 
-        core.init_components(enabled_components={"shares", "downloads", "userbrowse", "userlist"})
-        config.sections["transfers"]["downloaddir"] = config.data_folder_path
+        if not os.path.exists(DATA_FOLDER_PATH):
+            os.makedirs(DATA_FOLDER_PATH)
+
+        shutil.copy(TRANSFERS_FILE_PATH, os.path.join(DATA_FOLDER_PATH, TRANSFERS_BASENAME))
+
+        core.init_components(enabled_components={"users", "downloads", "userbrowse"})
+        config.sections["transfers"]["downloaddir"] = DATA_FOLDER_PATH
 
         core.start()
-        core.downloads._allow_saving_transfers = False
 
     def tearDown(self):
 
         core.quit()
 
-        self.assertIsNone(core.shares)
+        self.assertIsNone(core.users)
         self.assertIsNone(core.downloads)
         self.assertIsNone(core.userbrowse)
-        self.assertIsNone(core.userlist)
+        self.assertIsNone(core.buddies)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(DATA_FOLDER_PATH)
 
     def test_load_downloads(self):
         """Test loading a downloads.json file."""
@@ -107,7 +123,7 @@ class DownloadsTest(TestCase):
         will be added at the end of the session.
         """
 
-        old_transfers = core.downloads._load_transfers_file(core.downloads.transfers_file_path)[:12]
+        old_transfers = core.downloads._load_transfers_file(TRANSFERS_FILE_PATH)[:12]
 
         saved_transfers = core.downloads._get_transfer_rows()[:12]
         self.assertEqual(old_transfers, saved_transfers)
@@ -195,9 +211,11 @@ class DownloadsTest(TestCase):
         config.sections["transfers"]["usernamesubfolders"] = False
         destination_default = core.downloads.get_folder_destination(username, folder_path)
 
-        core.downloads.requested_folders[username][folder_path] = "test"
+        core.downloads._requested_folders[username][folder_path] = RequestedFolder(
+            username=username, folder_path=folder_path, download_folder_path="test"
+        )
         destination_custom = core.downloads.get_folder_destination(username, folder_path)
-        core.downloads.requested_folders.clear()
+        core.downloads._requested_folders.clear()
 
         destination_custom_second = core.downloads.get_folder_destination(
             username, folder_path, download_folder_path="test2")
@@ -222,7 +240,8 @@ class DownloadsTest(TestCase):
         """Verify that subfolders are downloaded to the correct location."""
 
         username = "random"
-        core.userbrowse.user_shares[username] = dict([
+        browsed_user = core.userbrowse.users[username] = BrowsedUser(username)
+        browsed_user.public_folders = dict([
             ("share", [
                 (1, "root1.mp3", 1000, "", {})
             ]),
@@ -245,6 +264,10 @@ class DownloadsTest(TestCase):
             ]),
             ("share\\Soulseek\\folder2\\sub2", [
                 (1, "file6.mp3", 8000000, "", {})
+            ]),
+            ("share\\SoulseekSecond", [
+                (1, "file7.mp3", 9000000, "", {}),
+                (1, "file8.mp3", 10000000, "", {})
             ])
         ])
 
@@ -255,8 +278,10 @@ class DownloadsTest(TestCase):
         core.userbrowse.download_folder(username, target_folder_path, download_folder_path="test", recurse=True)
 
         transfers = list(core.downloads.transfers.values())
-        self.assertEqual(len(transfers), 9)
+        self.assertEqual(len(transfers), 11)
 
+        self.assertEqual(transfers[10].folder_path, os.path.join("test", "share", "SoulseekSecond"))
+        self.assertEqual(transfers[9].folder_path, os.path.join("test", "share", "SoulseekSecond"))
         self.assertEqual(transfers[8].folder_path, os.path.join("test", "share", "Soulseek", "folder2", "sub2"))
         self.assertEqual(transfers[7].folder_path, os.path.join("test", "share", "Soulseek", "folder2"))
         self.assertEqual(transfers[6].folder_path, os.path.join("test", "share", "Soulseek", "folder1", "sub1"))
