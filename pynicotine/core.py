@@ -184,7 +184,7 @@ class Core:
             self.pluginhandler = PluginHandler()
 
         if "web_api" in enabled_components:
-            from pynicotine.webapicomponent import WebApiComponent
+            from pynicotine.webapi import WebApiComponent
             self.web_api = WebApiComponent()
 
     def _init_signal_handler(self):
