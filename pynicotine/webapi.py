@@ -18,30 +18,8 @@ import time
 from typing import Optional
 import json
 
-class SearchResult:
-
-    # __slots__ = {"user", "ip_address", "port", "has_free_slots", "inqueue", "ulspeed", "file_name", "file_extension", "file_path", "file_size", "file_h_length", "bitrate", "search_similarity", "file_attributes"}
-
-    def __init__(self, user, ip_address, port,has_free_slots, inqueue, ulspeed, file_name, file_extension, file_path, file_size, file_h_length, bitrate, search_similarity, file_attributes):
-
-        self.user = user
-        self.ip_address = ip_address
-        self.port = port
-        self.has_free_slots = has_free_slots
-        self.inqueue = inqueue
-        self.ulspeed = ulspeed
-        self.file_name = file_name
-        self.file_extension = file_extension
-        self.file_path = file_path
-        self.file_size = file_size
-        self.file_h_length = file_h_length
-        self.bitrate = bitrate
-        self.search_similarity = search_similarity
-        self.file_attributes = file_attributes
-
 class WebApiSearchResult(BaseModel):
-    token: int
-    search_term: str
+    
     user: str
     ip_address: str
     port: int
@@ -52,7 +30,7 @@ class WebApiSearchResult(BaseModel):
     file_extension: str
     file_path: str
     file_size: int
-    file_h_lenght: str
+    file_h_length: str
     bitrate: int
     search_similarity: float
     file_attributes: Optional[dict] = None
@@ -73,7 +51,7 @@ class WebApi:
         for event_name, callback in (
             ("quit", self._quit),
             ("start", self._start),
-            # ("file-search-response", self._file_search_response),
+            ("file-search-response", self._file_search_response),
             # ("download-notification", self._download_notification),
             # ("download-notification-web-api", self._download_notification_web_api)
         ):
@@ -144,14 +122,14 @@ class WebApi:
             msg.token = None
             return
 
-        search = core.search.web_api_searches.get(msg.token)
-        if search:
-            if not msg.token in self.active_searches:
-                self.active_searches[msg.token] = self._parse_search_response(msg, search)
-                t = Timer(2.0,self._search_timeout, args=[search])
-                t.start()
-            else:
-                self.active_searches[msg.token].extend(self._parse_search_response(msg, search))
+        search_req = core.search.searches.get(msg.token)
+        if search_req:
+            if not hasattr(search_req,"results"):
+                search_req.results = []
+            
+            for item in self._parse_search_response(msg, search_req):
+                search_req.results.append(item)
+                
 
     def _download_notification(self, status=None):
         if status:

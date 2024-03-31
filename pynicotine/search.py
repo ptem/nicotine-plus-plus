@@ -38,7 +38,7 @@ from pynicotine.utils import TRANSLATE_PUNCTUATION
 
 class SearchRequest:
 
-    __slots__ = ("token", "term", "included_words", "excluded_words", "mode", "room", "users", "is_ignored")
+    # __slots__ = ("token", "term", "included_words", "excluded_words", "mode", "room", "users", "is_ignored")
 
     def __init__(self, token=None, term=None, included_words=None, excluded_words=None, mode="global",
                  room=None, users=None, is_ignored=False):

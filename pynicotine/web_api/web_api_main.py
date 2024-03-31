@@ -91,7 +91,6 @@ async def do_web_api_global_search(search: WebApiSearchModel):
     search_req = core.search.searches.get(search_token)
     if search_req:
         search_req.is_ignored = True
-    # search_req.my_variable = "this just a random variable added dynamically"
     return search_req
 
 @app.get("/download")
