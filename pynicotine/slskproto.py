@@ -2573,15 +2573,12 @@ class NetworkThread(Thread):
         process_func(msg_obj)
 
     def _process_queue_messages(self):
-<<<<<<< HEAD
         """All messages sent via socket to the server are previously enqueued in the 'self._queue' object.
         In this function, we dequeue and process the messages we want to send to the server"""
-=======
 
         if not self._message_queue:
             return
 
->>>>>>> fcbf73a10bc0d2d9eabc04c6a0ddbb4c5730a784
         msgs = []
 
         while self._message_queue:
