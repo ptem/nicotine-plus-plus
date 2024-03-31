@@ -7,19 +7,22 @@ from pynicotine.config import config
 from pynicotine.logfacility import log
 from pynicotine.core import core
 from pynicotine.slskmessages import FileListMessage
-from pynicotine.web_api.web_api_main import AsyncUvicorn
+from pynicotine.core import core
+from pynicotine.logfacility import log
+from pynicotine.transfers import TransferStatus
 
 from pydantic import BaseModel
-from threading import Timer
+from threading import Thread, excepthook
 import pathlib
 from difflib import SequenceMatcher
 import requests
-import time
 from typing import Optional
-import json
+from fastapi import FastAPI
+import uvicorn
+import time
+import asyncio
 
 class WebApiSearchResult(BaseModel):
-    
     user: str
     ip_address: str
     port: int
@@ -39,6 +42,71 @@ class FileDownloadedNotification(BaseModel):
     user: str
     virtual_file_path: str
     file_download_path: str
+
+class WebApiSearchModel(BaseModel):
+    search_term: str
+    wait_for_seconds: int
+    search_filters: Optional[dict] = None
+    smart_filters: Optional[bool] = None
+    
+
+class FileToDownload(BaseModel):
+    file_owner: str
+    file_virtual_path: str
+    file_size: int
+    file_attributes: Optional[dict] = None
+
+class TransferModel(BaseModel):
+    username: str
+    virtual_path: str
+    download_path: str
+    status: str
+    size: int
+    current_byte_offset: Optional[int] = None
+    download_percentage: Optional[str] = None
+    file_attributes: Optional[dict] = None
+
+class SearchReqResponseModel(BaseModel):
+    pass
+
+class SearchResultModel(BaseModel):
+    pass
+
+class AsyncUvicorn:
+
+    exception_caught = False
+
+    def __init__(self, local_ip: str, local_port: int):
+        uvicorn_config = uvicorn.Config(app, local_ip, local_port)
+        self.server = uvicorn.Server(uvicorn_config)
+        self.thread = Thread(name="WebApiThread", daemon=True, target=self.__run_server)
+
+    def __run_server(self): 
+        try:
+            if not self.server.started:
+                self.server.run()
+        except SystemExit:
+            print("Error while starting the Web API server.")
+            time.sleep(5)
+            self.__run_server()
+
+    def start(self):
+            self.thread.start()
+
+    def stop(self):
+        if self.thread.is_alive():
+            self.server.should_exit = True
+            while self.thread.is_alive():
+                continue
+    
+    def thread_excepthook(args):
+        print(f"EXCEPTION! {args[1]}")
+
+    excepthook = thread_excepthook
+
+#####################
+# WEB API COMPONENT #
+#####################
 
 class WebApiComponent:
 
@@ -144,5 +212,58 @@ class WebApiComponent:
         data = file.model_dump()
         response = self.session.post(f'http://{config.sections["web_api"]["remote_ip"]}:{config.sections["web_api"]["remote_port"]}/download/notification', json=data)
 
+##########################
+# WEB API IMPLEMENTATION #
+##########################
+app = FastAPI()
 
-    
+@app.get("/foo")
+async def root():
+    return {"message": "Hello World"}
+
+@app.get("/search/global")
+async def do_web_api_global_search(search: WebApiSearchModel):
+
+    search_token = core.search.do_search(search.search_term, mode="global")
+    await asyncio.sleep(search.wait_for_seconds)
+    search_req = core.search.searches.get(search_token)
+    if search_req:
+        search_req.is_ignored = True
+    return search_req
+
+@app.get("/download")
+async def download_file(file: FileToDownload):
+
+    core.downloads.enqueue_download(file.file_owner, file.file_virtual_path, folder_path=None, size=file.file_size, file_attributes=file.file_attributes)
+    return f"Download enqueued: {file.file_virtual_path}"
+
+@app.get("/download/getdownloads")
+async def get_dowloads():
+
+    core_transfers = core.downloads.get_transfer_list()
+    list_to_send = []
+    for transfer in core_transfers:
+        list_to_send.append(TransferModel(
+                                username=transfer.username, 
+                                virtual_path=transfer.virtual_path,
+                                download_path=transfer.folder_path,
+                                status=transfer.status,
+                                size=transfer.size,
+                                current_byte_offset=transfer.current_byte_offset,
+                                download_percentage=f"{transfer.current_byte_offset*100/transfer.size:.2f}%" if transfer.current_byte_offset else "0%",
+                                file_attributes=transfer.file_attributes))
+    return list_to_send
+
+@app.delete("/download/abortandclean")
+async def abort_and_clean_all_downloads():
+    core.downloads.clear_downloads(statuses=[TransferStatus.FINISHED])
+    return "All downloads will be aborted and cleaned"
+
+'''
+    Data needed for a download:
+
+                "user") => 'merciero23'
+                "file_path_data") => '@@xpgbc\\TEMAS COMPARTIDOS 2\\mp3\\4635732_Love___Happiness__Yemaya___Ochun__Feat__India_David_Penn_Vocal_Mix.mp3'
+                "size_data") => 18527131
+                "file_attributes_data") => 
+'''
