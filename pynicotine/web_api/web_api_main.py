@@ -9,11 +9,15 @@ from pydantic import BaseModel
 import uvicorn
 import threading
 import time
+import asyncio
+import json
 
 class WebApiSearchModel(BaseModel):
     search_term: str
+    wait_for_seconds: int
     search_filters: Optional[dict] = None
     smart_filters: Optional[bool] = None
+    
 
 class FileToDownload(BaseModel):
     file_owner: str
@@ -31,6 +35,12 @@ class TransferModel(BaseModel):
     current_byte_offset: Optional[int] = None
     download_percentage: Optional[str] = None
     file_attributes: Optional[dict] = None
+
+class SearchReqResponseModel(BaseModel):
+    pass
+
+class SearchResultModel(BaseModel):
+    pass
 
 class AsyncUvicorn:
 
@@ -64,6 +74,7 @@ class AsyncUvicorn:
 
     threading.excepthook = thread_excepthook
 
+
 app = FastAPI()
 
 @app.get("/")
@@ -74,8 +85,14 @@ def read_root():
 
 @app.get("/search/global")
 async def do_web_api_global_search(search: WebApiSearchModel):
-    core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
-    return search
+    # search_token = core.search.do_search_from_web_api(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
+    search_token = core.search.do_search(search.search_term, mode="global", search_filters=search.search_filters, smart_filters=search.smart_filters)
+    await asyncio.sleep(search.wait_for_seconds)
+    search_req = core.search.searches.get(search_token)
+    if search_req:
+        search_req.is_ignored = True
+    # search_req.my_variable = "this just a random variable added dynamically"
+    return search_req
 
 @app.get("/download")
 async def download_file(file: FileToDownload):
