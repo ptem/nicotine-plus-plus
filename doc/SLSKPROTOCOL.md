@@ -1,6 +1,6 @@
 # Soulseek Protocol Documentation
 
-Last updated on November 12, 2023
+Last updated on March 16, 2024
 
 Since the official Soulseek client and server is proprietary software, this documentation has been compiled thanks to years of reverse engineering efforts. To preserve the health of the Soulseek network, please do not modify or extend the protocol in ways that negatively impact the network.
 
@@ -80,6 +80,15 @@ If you find any inconsistencies, errors or omissions in the documentation, pleas
 | 1    | Away    |
 | 2    | Online  |
 
+### Upload Permissions
+
+| Code | Status          |
+|------|-----------------|
+| 0    | No One          |
+| 1    | Everyone        |
+| 2    | Users in List   |
+[ 3    | Permitted Users |
+
 ### Transfer Directions
 
 | Code | Direction          |
@@ -127,19 +136,13 @@ If you find any inconsistencies, errors or omissions in the documentation, pleas
 
 #### File Attribute Combinations
 
-These combinations are actively used by clients. Other combinations are discouraged, unless the official client makes changes.
+These combinations are actively used by clients. Certain attributes can be missing if a file does not provide them.
 
   - Soulseek NS, SoulseekQt (2015-2-21 and earlier), Nicotine+ (lossy formats), Museek+, SoulSeeX, slskd (lossy formats):
       - {0: *bitrate*, 1: *duration*, 2: *VBR*}
 
-  - SoulseekQt (2015-2-21 and earlier):
-      - {0: *bitrate*, 2: *VBR*}
-
   - SoulseekQt (2015-6-12 and later):
-      - {0: *bitrate*}
-      - {1: *duration*}
       - {0: *bitrate*, 1: *duration*} (MP3, OGG, WMA, M4A)
-      - {4: *sample rate*, 5: *bit depth*}
       - {1: *duration*, 4: *sample rate*, 5: *bit depth*} (FLAC, WAV, APE)
       - {0: *bitrate*, 1: *duration*, 4: *sample rate*, 5: *bit depth*} (WV)
 
@@ -262,6 +265,7 @@ but it handles the protocol well enough (and can be modified).
 | 151  | [Leave Global Room](#server-code-151)             | Deprecated |
 | 152  | [Global Room Message](#server-code-152)           | Deprecated |
 | 153  | [Related Searches](#server-code-153)              | Obsolete   |
+| 160  | [Excluded Search Phrases](#server-code-160)       |            |
 | 1001 | [Can't Connect To Peer](#server-code-1001)        |            |
 | 1003 | [Can't Create Room](#server-code-1003)            |            |
 
@@ -1830,6 +1834,21 @@ The server returns a list of related search terms for a search query.
         1.  **string** <ins>term</ins>
         2.  **uint32** <ins>score</ins>
 
+## Server Code 160
+
+### ExcludedSearchPhrases
+
+The server sends a list of phrases not allowed on the search network. File paths containing such phrases should be excluded when responding to search requests.
+
+### Data Order
+
+  - Send
+      - *No Message*
+  - Receive
+    1.  **uint32** <ins>number of phrases</ins>
+    2.  Iterate for <ins>number of phrases</ins>
+        1.  **string** <ins>phrase</ins>
+
 ## Server Code 1001
 
 ### CantConnectToPeer
@@ -2163,8 +2182,8 @@ A peer responds with this after we've sent a [UserInfoRequest](#peer-code-15).
     3.  **uint32** <ins>totalupl</ins>
     4.  **uint32** <ins>queuesize</ins>
     5.  **bool** <ins>slotsfree</ins> *Can immediately upload*
-    6.  **uint32** <ins>uploadpermitted</ins> *Who can upload anything to us?*
-        *0 == No one; 1 == Everyone; 2 == Users in List; 3 == Trusted Users*
+    6.  Optional (not sent by SoulseekQt)
+        1.  **uint32** <ins>uploadpermitted</ins> *Who can upload anything to us? See [Upload Permissions](#upload-permissions).*
   - Receive
     1.  **string** <ins>description</ins>
     2.  **bool** <ins>has picture</ins>
@@ -2173,8 +2192,8 @@ A peer responds with this after we've sent a [UserInfoRequest](#peer-code-15).
     4.  **uint32** <ins>totalupl</ins>
     5.  **uint32** <ins>queuesize</ins>
     6.  **bool** <ins>slotsfree</ins> *Can immediately download*
-    7.  **uint32** <ins>uploadpermitted</ins> *Who can upload anything to this user (not sent by SoulseekQt)?*
-        *0 == No one; 1 == Everyone; 2 == Users in List; 3 == Trusted Users*
+    7.  Optional (not sent by SoulseekQt)
+        1.  **uint32** <ins>uploadpermitted</ins> *Who can upload anything to this user? See [Upload Permissions](#upload-permissions).*
 
 ## Peer Code 36
 
