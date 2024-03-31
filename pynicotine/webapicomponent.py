@@ -40,7 +40,7 @@ class FileDownloadedNotification(BaseModel):
     virtual_file_path: str
     file_download_path: str
 
-class WebApi:
+class WebApiComponent:
 
     def __init__(self):
 
