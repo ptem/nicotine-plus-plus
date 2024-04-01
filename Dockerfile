@@ -11,7 +11,7 @@ COPY pynicotine /usr/nicotine/app/pynicotine
 COPY nicotine /usr/nicotine/app/nicotine
 COPY requirements.txt /usr/nicotine/app/requirements.txt
 
-RUN pip install -r requirements.txt
+RUN pip3 install -r requirements.txt
 
 #Entrypoint
 ENTRYPOINT [ "python3", "./nicotine", "--headless"]
