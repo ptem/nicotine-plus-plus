@@ -433,10 +433,10 @@ class Config:
                 "uploaded_size": 0
             },
             "web_api":{
-                "enable": False,
-                "local_ip": "",
+                "enable": True,
+                "local_ip": "0.0.0.0",
                 "local_port": 7770,
-                "remote_ip": "",
+                "remote_ip": "0.0.0.0",
                 "remote_port": 7771
             }
         }

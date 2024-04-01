@@ -1,0 +1,5 @@
+# Build image
+docker build -t nicotine-plus-plus:alpha .
+
+# RUN Script
+docker run --rm -it -p 7770:7770 --name nicotine-plus-plus nicotine-plus-plus:alpha
