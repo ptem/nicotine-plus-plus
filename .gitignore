@@ -40,3 +40,4 @@ packaging/windows/build/
 
 # VS Code
 .vscode/
+nicotine_data/
