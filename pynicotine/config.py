@@ -63,7 +63,6 @@ class Config:
             self.set_config_file(os.path.join(config_folder_path, "config"))
 
         self.set_data_folder(data_folder_path)
-        print(f"NICOTINE_DATA_HOME => {os.environ["NICOTINE_DATA_HOME"]}")
 
         self.config_loaded = False
         self.parser = configparser.ConfigParser(strict=False, interpolation=None)
@@ -102,15 +101,6 @@ class Config:
 
         config_folder_path = xdg_path("XDG_CONFIG_HOME", os.path.join(home, ".config"))
         data_folder_path = xdg_path("XDG_DATA_HOME", os.path.join(home, ".local", "share"))
-        
-        print(f"\nHome folder => {home}")
-        print(f"Legacy folder => {legacy_folder_path}")
-        print(f"XDG_CONFIG_HOME => {os.environ["XDG_CONFIG_HOME"]}")
-        print(f"XDG_DATA_HOME => {os.environ["XDG_DATA_HOME"]}")
-        print(f"Config folder => {config_folder_path}")
-        print(f"Data folder => {data_folder_path}")
-
-        # print(f"NICOTINE_DATA_HOME => {os.environ["NICOTINE_DATA_HOME"]}")
 
         return config_folder_path, data_folder_path
 
@@ -445,9 +435,7 @@ class Config:
             "web_api":{
                 "enable": True,
                 "local_ip": "0.0.0.0",
-                "local_port": 7770,
-                "remote_ip": "0.0.0.0",
-                "remote_port": 7771
+                "local_port": 7770
             }
         }
 
