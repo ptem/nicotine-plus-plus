@@ -20,5 +20,3 @@ docker run --rm -it -p 7770:7770 --name nicotine-plus-plus nicotine-plus-plus:al
 # Compose
 docker compose up -d
 docker compose up -d --build
-
-#CommentToBeDeleted
