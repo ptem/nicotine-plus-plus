@@ -1,0 +1,12 @@
+services:
+  nicotine:
+    container_name: nicotine-plus-plus
+    build: .
+    ports:
+      - "7770:7770"
+    volumes:
+      - ./nicotine_data/transfers/downloads:/nicotine/data/nicotine/downloads
+      - ./nicotine_data/transfers/incomplete:/nicotine/data/nicotine/incomplete
+      - ./nicotine_data/transfers/received:/nicotine/data/nicotine/received
+      - ./nicotine_data/config:/nicotine/config/nicotine
+    image: "nicotine-plus-plus:alpha"
