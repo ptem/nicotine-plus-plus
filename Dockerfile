@@ -3,8 +3,8 @@ ENV TZ="Europe/Madrid"
 
 WORKDIR /usr/nicotine/app
 
-ENV XDG_CONFIG_HOME /nicotine/config
-ENV XDG_DATA_HOME /nicotine/data
+ENV XDG_CONFIG_HOME /config
+ENV XDG_DATA_HOME /data
 
 #Copy the python code
 COPY pynicotine /usr/nicotine/app/pynicotine

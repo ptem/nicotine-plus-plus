@@ -2,11 +2,18 @@ services:
   nicotine:
     container_name: nicotine-plus-plus
     build: .
+    environment:
+      - CRED=/run/secrets/npp_credentials
     ports:
       - "7770:7770"
     volumes:
-      - ./nicotine_data/transfers/downloads:/nicotine/data/nicotine/downloads
-      - ./nicotine_data/transfers/incomplete:/nicotine/data/nicotine/incomplete
-      - ./nicotine_data/transfers/received:/nicotine/data/nicotine/received
-      - ./nicotine_data/config:/nicotine/config/nicotine
+      - ./nicotine_data/transfers/downloads:/data/nicotine/downloads
+      - ./nicotine_data/transfers/incomplete:/data/nicotine/incomplete
+      - ./nicotine_data/transfers/received:/data/nicotine/received
+      - ./nicotine_data/config:/config/nicotine
     image: "nicotine-plus-plus:alpha"
+    secrets:
+      - npp_credentials
+secrets:
+   npp_credentials:
+     file: ./npp_credentials.txt

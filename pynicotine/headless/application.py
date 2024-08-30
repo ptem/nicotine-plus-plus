@@ -18,6 +18,7 @@
 
 import sys
 import time
+import os
 
 from pynicotine.cli import cli
 from pynicotine.config import config
@@ -96,10 +97,30 @@ class Application:
         cli.prompt(_("Password: "), callback=self.on_setup_password_response, is_silent=True)
 
     def on_setup(self):
-        log.add(_("To create a new Soulseek account, fill in your desired username and password. If you "
-                  "already have an account, fill in your existing login details."))
-        cli.prompt(_("Username: "), callback=self.on_setup_username_response)
 
+        if not self.check_credentials_file():
+            log.add(_("To create a new Soulseek account, fill in your desired username and password. If you "
+                    "already have an account, fill in your existing login details."))
+            cli.prompt(_("Username: "), callback=self.on_setup_username_response)
+
+    def check_credentials_file(self) -> bool:
+        
+        cred_file_path = os.environ.get("CRED")
+        if cred_file_path and os.path.isfile(cred_file_path):
+            log.add(f"Credentials file was found. Establishing connection...")
+            with open(cred_file_path) as f:
+                cred_file = f.read().splitlines()
+                if cred_file[0] and cred_file[1]:
+                    config.sections["server"]["login"] = cred_file[0]
+                    config.sections["server"]["passw"] = cred_file[1]
+                    config.write_configuration()
+                    core.connect()
+                    return True
+                else:
+                    return False
+        else:
+            return False
+                
     def on_shares_unavailable_response(self, user_input):
 
         user_input = user_input.lower()
