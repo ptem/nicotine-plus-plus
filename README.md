@@ -1,10 +1,17 @@
 # Nicotine++
 
-<img src="pynicotine/gtkgui/icons/hicolor/scalable/apps/org.nicotine_plus.Nicotine.svg" align="right" width="128" height="128" style="margin: 0 10px">
+<img src="pynicotine/gtkgui/icons/hicolor/scalable/apps/org.nicotine_plus.Nicotinepp.svg" align="right">
 
 Nicotine++ is a vitaminized version of the popular [Soulseek](https://www.slsknet.org/) client [Nicotine+](https://nicotine-plus.org/).
 
 Its main purpose is to run headlessly in a docker container and to expose an API so that any client is able to search and download your favorite files using the Soulseek peer-to-peer network.
+
+## Prerequisites
+
+- Docker v20 or higher.
+- docker-compose v2.
+  
+  This is normally installed by default in Windows but if you are using a Raspberry Pi it might not be installed. If that's the case, [this](https://medium.com/@vinothsubramanian/how-to-install-docker-compose-in-raspberry-pi-4a11e6314bbb) may help you.
 
 ## Install
 
@@ -16,7 +23,7 @@ The installation steps are:
    chair
    table
    ```
-    The user will be `chair` and the password will be `table`. Once done, you can save and close the file
+    The user will be `chair` and the password will be `table`. Once done, you can save and close the file.
 3. The next step is optional. If you want to define your own folder structure where the files are downloaded you have to edit the `docker-compose.yaml` file. You only have to change the path that is before the colon `:`.
     ```
     volumes:
@@ -26,14 +33,16 @@ The installation steps are:
       - ./nicotine_data/config:/config/nicotine
     
     ```
-4. Run the following command to build the docker and create the container: ```docker compose up -d --build```
+4. Open a command prompt, navigate to the repository root folder and run the following command: ```docker compose up -d --build```.
 
-And that's it! Nicotine++ should now be running on your machine.
+And that's it! Nicotine++ should be now running on your machine. 
+
+*If you want, you can now delete the file `credentials.txt` that you created previously.*
 
 ## API
 
 ```
-Under construction
+Documentation under construction
 ```
 
 ## Nicotine+
