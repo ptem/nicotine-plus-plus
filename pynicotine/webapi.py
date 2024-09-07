@@ -171,7 +171,7 @@ async def root():
 async def do_web_api_global_search(search: WebApiSearchModel):
 
     max_simultaneous_searches = config.sections["web_api"]["max_simultaneous_searches"]
-    if len(core.search.searches) + 1 <= max_simultaneous_searches:
+    if len(core.search.searches) < max_simultaneous_searches:
         search_token = core.search.do_search(search.search_term, mode="global")
         await asyncio.sleep(search.wait_for_seconds)
         search_req = core.search.searches.get(search_token)
