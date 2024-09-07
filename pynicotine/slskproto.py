@@ -1239,9 +1239,10 @@ class NetworkThread(Thread):
         addr = conn_obj.addr
 
         log.add(
-            _("Connected to server %(host)s:%(port)s, logging in…"), {
+            _("Connected to server %(host)s:%(port)s, logging in with user '%(login)s'…"), {
                 "host": addr[0],
-                "port": addr[1]
+                "port": addr[1],
+                "login": conn_obj.login[0]
             }
         )
 
