@@ -18,7 +18,7 @@ Its main purpose is to run headlessly in a docker container and to expose an API
 The installation steps are:
 
 1. Checkout the repository in your machine.
-2. Create a file called the file `npp_credentials.txt` and write the credentials you want to use in order to be able to connect to the network. In line 1 type your user and in line 2 type your password. You can use just some random credentials since you do not need to register or anything like that. Taking this into account, the file should look like this:
+2. Create a file called the file `credentials.txt` and write the credentials you want to use in order to be able to connect to the network. In line 1 type your user and in line 2 type your password. You can use just some random credentials since you do not need to register or anything like that. Taking this into account, the file should look like this:
    ```
    chair
    table

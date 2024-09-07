@@ -42,4 +42,4 @@ packaging/windows/build/
 .vscode/
 nicotine_data/
 npp_data/
-npp_credentials.txt
+*credentials.txt
