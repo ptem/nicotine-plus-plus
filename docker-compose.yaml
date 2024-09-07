@@ -7,10 +7,10 @@ services:
     ports:
       - "7770:7770"
     volumes:
-      - ./nicotine_data/transfers/downloads:/data/nicotine/downloads
-      - ./nicotine_data/transfers/incomplete:/data/nicotine/incomplete
-      - ./nicotine_data/transfers/received:/data/nicotine/received
-      - ./nicotine_data/config:/config/nicotine
+      - ./npp_data/transfers/downloads:/data/nicotine/downloads
+      - ./npp_data/transfers/incomplete:/data/nicotine/incomplete
+      - ./npp_data/transfers/received:/data/nicotine/received
+      - ./npp_data/config:/config/nicotine
     image: "nicotine-plus-plus:alpha"
     secrets:
       - npp_credentials
