@@ -293,10 +293,10 @@ class Config:
                 "chat_room": {}
             },
             "searches": {
-                "expand_searches": True,
+                "expand_searches": False,
                 "group_searches": "folder_grouping",
                 "maxresults": 150,
-                "enable_history": True,
+                "enable_history": False,
                 "history": [],
                 "enablefilters": False,
                 "filters_visible": False,
@@ -435,7 +435,8 @@ class Config:
             "web_api":{
                 "enable": True,
                 "local_ip": "0.0.0.0",
-                "local_port": 7770
+                "local_port": 7770,
+                "max_simultaneous_searches": 10
             }
         }
 
