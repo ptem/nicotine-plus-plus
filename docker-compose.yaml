@@ -1,6 +1,7 @@
 services:
   nicotine:
     container_name: nicotine-plus-plus
+    restart: unless-stopped
     build: .
     environment:
       - CRED=/run/secrets/npp_credentials
@@ -16,4 +17,4 @@ services:
       - npp_credentials
 secrets:
    npp_credentials:
-     file: ./npp_credentials.txt
+     file: ./credentials.txt
