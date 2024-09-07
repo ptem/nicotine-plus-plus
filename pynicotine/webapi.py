@@ -178,9 +178,14 @@ async def do_web_api_global_search(search: WebApiSearchModel):
         if search_req:
             search_req.is_ignored = True
         core.search.remove_search(search_token)
+        
+        if not hasattr(search_req,"results"):
+            return "No results found. Please, try with another search string."
+        else:
+            return search_req
     else:
         return "Too many simultaneous searches. Please, try again later."
-    return search_req
+
 
 @app.get("/download")
 async def download_file(file: FileToDownload):
