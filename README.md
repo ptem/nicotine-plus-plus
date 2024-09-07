@@ -25,10 +25,10 @@ The installation steps are:
 3. The next step is optional. If you want to define your own folder structure where the files are downloaded you have to edit the `docker-compose.yaml` file. You only have to change the path that is before the colon `:`.
     ```
     volumes:
-      - ./nicotine_data/transfers/downloads:/data/nicotine/downloads
-      - ./nicotine_data/transfers/incomplete:/data/nicotine/incomplete
-      - ./nicotine_data/transfers/received:/data/nicotine/received
-      - ./nicotine_data/config:/config/nicotine
+      - ./npp_data/transfers/downloads:/data/nicotine/downloads
+      - ./npp_data/transfers/incomplete:/data/nicotine/incomplete
+      - ./npp_data/transfers/received:/data/nicotine/received
+      - ./npp_data/config:/config/nicotine
     
     ```
 4. Open a command prompt, navigate to the repository root folder and run the following command: ```docker compose up -d --build```.
