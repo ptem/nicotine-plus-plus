@@ -9,9 +9,7 @@ Its main purpose is to run headlessly in a docker container and to expose an API
 ## Prerequisites
 
 - Docker v20 or higher.
-- docker-compose v2.
-  
-  This is normally installed by default in Windows but if you are using a Raspberry Pi it might not be installed. If that's the case, [this](https://medium.com/@vinothsubramanian/how-to-install-docker-compose-in-raspberry-pi-4a11e6314bbb) may help you.
+- Docker compose v2: this is normally installed by default in Windows when you perform the Docker installation but if you are using a Raspberry Pi it might not be installed. If that's the case, [this](https://medium.com/@vinothsubramanian/how-to-install-docker-compose-in-raspberry-pi-4a11e6314bbb) may help you.
 
 ## Install
 
