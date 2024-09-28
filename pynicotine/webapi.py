@@ -1,3 +1,5 @@
+#This is just a random text
+
 from pynicotine import slskmessages
 from pynicotine.events import events
 from pynicotine.config import config
@@ -21,7 +23,7 @@ import asyncio
 class AsyncUvicorn:
 
     exception_caught = False
-
+    
     def __init__(self, local_ip: str, local_port: int):
         uvicorn_config = uvicorn.Config(app, local_ip, local_port)
         self.server = uvicorn.Server(uvicorn_config)
