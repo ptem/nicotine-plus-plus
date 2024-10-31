@@ -16,13 +16,7 @@ Its main purpose is to run headlessly in a docker container and to expose an API
 The installation steps are:
 
 1. Checkout the repository in your machine.
-2. Create a file called the file `credentials.txt` and write the credentials you want to use in order to be able to connect to the network. In line 1 type your user and in line 2 type your password. You can use just some random credentials since you do not need to register or anything like that. Taking this into account, the file should look like this:
-   ```
-   chair
-   table
-   ```
-    The user will be `chair` and the password will be `table`. Once done, you can save and close the file.
-3. The next step is optional. If you want to define your own folder structure where the files are downloaded you have to edit the `docker-compose.yaml` file. You only have to change the path that is before the colon `:`.
+2. The next step is optional. If you want to define your own folder structure where the files are downloaded you have to edit the `docker-compose.yaml` file. You only have to change the path that is before the colon `:`.
     ```
     volumes:
       - ./npp_data/transfers/downloads:/data/nicotine/downloads
@@ -31,11 +25,11 @@ The installation steps are:
       - ./npp_data/config:/config/nicotine
     
     ```
-4. Open a command prompt, navigate to the repository root folder and run the following command: ```docker compose up -d --build```.
+3. Open a command prompt, navigate to the repository root folder and run the following command: ```docker compose up -d --build```.
 
 And that's it! Nicotine++ should be now running on your machine. 
 
-*If you want, you can now delete the file `credentials.txt` that you created previously.*
+When you create the docker container for the first time, by default, Nicotine++ will generate random user and password so that you can connect to the network. In case you want to use your own credentials you can stop the container and change them in the config file. Once you save the changes on the configuration file, the container will read and use the new credentials.
 
 ## API
 
