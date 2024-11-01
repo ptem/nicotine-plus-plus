@@ -9,5 +9,6 @@ services:
       - ./npp_data/transfers/downloads:/data/nicotine/downloads
       - ./npp_data/transfers/incomplete:/data/nicotine/incomplete
       - ./npp_data/transfers/received:/data/nicotine/received
+      - ./npp_data/transfers/uploads:/data/nicotine/uploads
       - ./npp_data/config:/config/nicotine
     image: "nicotine-plus-plus:alpha"

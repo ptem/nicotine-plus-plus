@@ -183,7 +183,7 @@ class Config:
                 "downloaddir": os.path.join("${NICOTINE_DATA_HOME}", "downloads"),
                 "uploaddir": os.path.join("${NICOTINE_DATA_HOME}", "received"),
                 "usernamesubfolders": False,
-                "shared": [],
+                "shared": [('uploads',os.path.join("${NICOTINE_DATA_HOME}", "uploads"))],
                 "buddyshared": [],
                 "trustedshared": [],
                 "uploadbandwidth": 50,
