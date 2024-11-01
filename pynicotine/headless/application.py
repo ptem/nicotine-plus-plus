@@ -49,6 +49,7 @@ class Application:
     def run(self):
 
         core.start()
+        self.generate_random_credentials()
         core.connect()
 
         # Main loop, process events from threads 10 times per second
@@ -102,9 +103,11 @@ class Application:
         log.add(f"Generating random credentials")      
         config.sections["server"]["login"] = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
         config.sections["server"]["passw"] = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
+        config.write_configuration()
 
     def on_setup(self):
         self.generate_random_credentials()
+        core.connect()
         # log.add(_("To create a new Soulseek account, fill in your desired username and password. If you "
         #         "already have an account, fill in your existing login details."))
         # cli.prompt(_("Username: "), callback=self.on_setup_username_response)
