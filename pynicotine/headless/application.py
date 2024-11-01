@@ -49,7 +49,6 @@ class Application:
     def run(self):
 
         core.start()
-        self.generate_random_credentials()
         core.connect()
 
         # Main loop, process events from threads 10 times per second
