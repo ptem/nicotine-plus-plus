@@ -25,7 +25,9 @@ The installation steps are:
       - ./npp_data/config:/config/nicotine
     
     ```
-3. Open a command prompt, navigate to the repository root folder and run the following command: ```docker compose up -d --build```.
+3. Open a command prompt, navigate to the repository root folder and run the following command:  
+   - Windows: ```docker compose up -d --build```
+   - Raspberry Pi: ```docker-compose up -d --build``` (make sure that the package ```docker-compose``` is installed in your Raspi)
 
 And that's it! Nicotine++ should be now running on your machine. 
 

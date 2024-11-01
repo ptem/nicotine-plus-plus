@@ -98,7 +98,8 @@ class Application:
 
         cli.prompt(_("Password: "), callback=self.on_setup_password_response, is_silent=True)
 
-    def generate_random_credentials(self):        
+    def generate_random_credentials(self):
+        log.add(f"Generating random credentials")      
         config.sections["server"]["login"] = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
         config.sections["server"]["passw"] = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
 
