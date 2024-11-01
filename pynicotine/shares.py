@@ -511,6 +511,7 @@ class Scanner:
             file_list = []
 
             try:
+
                 with os.scandir(encode_path(folder_path, prefix=False)) as entries:
                     for entry in entries:
                         basename = entry.name.decode("utf-8", "replace")
@@ -878,8 +879,15 @@ class Shares:
         shared_public_folders = config.sections["transfers"]["shared"]
         shared_buddy_folders = config.sections["transfers"]["buddyshared"]
         shared_trusted_folders = config.sections["transfers"]["trustedshared"]
-
+        
+        shared_public_folders = [(x[0], self.normalize_path(x[1])) for x in shared_public_folders]
+        shared_buddy_folders = [(x[0], self.normalize_path(x[1])) for x in shared_buddy_folders]
+        shared_trusted_folders = [(x[0], self.normalize_path(x[1])) for x in shared_trusted_folders]
+        
         return shared_public_folders, shared_buddy_folders, shared_trusted_folders
+
+    def normalize_path(self, string):
+        return os.path.normpath(os.path.expandvars(string))
 
     def get_normalized_virtual_name(self, virtual_name, shared_folders=None):
 
@@ -1037,7 +1045,8 @@ class Shares:
 
         for share in share_groups:
             for virtual_name, folder_path, *_unused in share:
-                if not os.access(encode_path(os.path.normpath(os.path.expandvars(folder_path))), os.R_OK):
+                #os.path.normpath(os.path.expandvars(folder_path))
+                if not os.access(encode_path(folder_path), os.R_OK):
                     unavailable_shares.append((virtual_name, folder_path))
 
         return unavailable_shares
