@@ -1037,7 +1037,7 @@ class Shares:
 
         for share in share_groups:
             for virtual_name, folder_path, *_unused in share:
-                if not os.access(encode_path(folder_path), os.R_OK):
+                if not os.access(encode_path(os.path.normpath(os.path.expandvars(folder_path))), os.R_OK):
                     unavailable_shares.append((virtual_name, folder_path))
 
         return unavailable_shares
