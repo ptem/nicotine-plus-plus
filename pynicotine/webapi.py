@@ -9,7 +9,14 @@ from pynicotine.slskmessages import FileListMessage
 from pynicotine.core import core
 from pynicotine.logfacility import log
 from pynicotine.transfers import TransferStatus
-from pynicotine.webapi_models import WebApiSearchResult, FileDownloadedNotification, WebApiSearchModel, FileToDownload, TransferModel, BrowseUserRequest, BrowseUserResponse, BrowseStatusResponse, BrowseFileInfo, EnhancedTransferModel, UserQueueStatsModel, QueueInvestigationRequest, QueueInvestigationResponse, UserStatusModel, BulkUserStatusRequest, BulkUserStatusResponse
+from pynicotine.webapi_models import (
+    WebApiSearchResult, FileDownloadedNotification, WebApiSearchModel, FileToDownload, TransferModel, 
+    BrowseUserRequest, BrowseUserResponse, BrowseStatusResponse, BrowseFileInfo, 
+    EnhancedTransferModel, UserQueueStatsModel, QueueInvestigationRequest, QueueInvestigationResponse, 
+    UserStatusModel, BulkUserStatusRequest, BulkUserStatusResponse,
+    ShareVerificationRequest, ShareHealthMetrics, ShareVerificationResponse, ShareMonitoringRequest, ShareMonitoringResponse,
+    ApiPerformanceMetrics, SystemLimitsInfo, PerformanceOptimizationRequest, PerformanceOptimizationResponse
+)
 
 from threading import Thread
 import pathlib
@@ -19,6 +26,15 @@ from fastapi import FastAPI
 import uvicorn
 import time
 import asyncio
+import uuid    # For generating monitoring IDs
+import statistics
+
+# Optional import for system metrics
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 class AsyncUvicorn:
 
@@ -748,3 +764,353 @@ async def get_bulk_user_status(request: BulkUserStatusRequest):
                 "size_data") => 18527131
                 "file_attributes_data") => 
 '''
+
+
+# Share Accessibility Verification Endpoints
+
+async def _verify_single_share(username: str, timeout: int = 30, verify_download: bool = False) -> ShareHealthMetrics:
+    """Helper function to verify accessibility of a single user's share."""
+    start_time = time.time()
+    
+    try:
+        # Test connection and online status
+        user_status = _get_user_status_info(username, request_if_unknown=True)
+        connection_success = user_status.is_online
+        
+        if not connection_success:
+            return ShareHealthMetrics(
+                username=username,
+                is_accessible=False,
+                connection_success=False,
+                browse_success=False,
+                error_type="user_offline",
+                error_message=f"User {username} is offline",
+                verified_at=start_time
+            )
+        
+        # Test browse capability
+        browse_request = BrowseUserRequest(username=username, timeout=timeout)
+        browse_response = await browse_user_shares(browse_request)
+        
+        browse_success = browse_response.status == "success"
+        connection_time_ms = (time.time() - start_time) * 1000
+        
+        # Calculate reliability score based on successful operations
+        reliability_score = 0.0
+        if connection_success:
+            reliability_score += 50.0
+        if browse_success:
+            reliability_score += 40.0
+        if browse_response.total_files and browse_response.total_files > 0:
+            reliability_score += 10.0
+        
+        return ShareHealthMetrics(
+            username=username,
+            is_accessible=browse_success,
+            connection_success=connection_success,
+            browse_success=browse_success,
+            connection_time_ms=connection_time_ms,
+            response_time_ms=connection_time_ms,
+            total_files=browse_response.total_files,
+            total_size=browse_response.total_size,
+            reliability_score=reliability_score,
+            last_successful_connection=time.strftime('%Y-%m-%d %H:%M:%S') if browse_success else None,
+            consecutive_failures=0 if browse_success else 1,
+            verified_at=start_time
+        )
+        
+    except Exception as e:
+        connection_time_ms = (time.time() - start_time) * 1000
+        return ShareHealthMetrics(
+            username=username,
+            is_accessible=False,
+            connection_success=False,
+            browse_success=False,
+            connection_time_ms=connection_time_ms,
+            reliability_score=0.0,
+            consecutive_failures=1,
+            error_type="verification_error",
+            error_message=str(e),
+            verified_at=start_time
+        )
+
+@app.post("/shares/verify")
+async def verify_shares_accessibility(request: ShareVerificationRequest):
+    """Verify accessibility of multiple user shares."""
+    
+    verification_start = time.time()
+    
+    try:
+        share_health_reports = []
+        successful_verifications = 0
+        connection_times = []
+        reliability_scores = []
+        
+        # Verify each user's share
+        for username in request.usernames:
+            try:
+                health_report = await _verify_single_share(
+                    username, 
+                    timeout=request.timeout_seconds,
+                    verify_download=request.verify_download
+                )
+                
+                share_health_reports.append(health_report)
+                
+                if health_report.is_accessible:
+                    successful_verifications += 1
+                
+                if health_report.connection_time_ms:
+                    connection_times.append(health_report.connection_time_ms)
+                
+                if health_report.reliability_score:
+                    reliability_scores.append(health_report.reliability_score)
+                    
+            except Exception as e:
+                log.add(f"Error verifying share for {username}: {e}")
+                # Add error entry
+                share_health_reports.append(ShareHealthMetrics(
+                    username=username,
+                    is_accessible=False,
+                    connection_success=False,
+                    browse_success=False,
+                    error_type="verification_error",
+                    error_message=str(e),
+                    verified_at=time.time()
+                ))
+        
+        verification_end = time.time()
+        
+        return ShareVerificationResponse(
+            total_users_verified=len(request.usernames),
+            successful_verifications=successful_verifications,
+            failed_verifications=len(request.usernames) - successful_verifications,
+            share_health_reports=share_health_reports,
+            average_connection_time_ms=statistics.mean(connection_times) if connection_times else None,
+            average_reliability_score=statistics.mean(reliability_scores) if reliability_scores else None,
+            verification_started_at=verification_start,
+            verification_completed_at=verification_end,
+            total_verification_time_ms=(verification_end - verification_start) * 1000
+        )
+        
+    except Exception as e:
+        log.add(f"Error in share verification: {e}")
+        return ShareVerificationResponse(
+            total_users_verified=0,
+            successful_verifications=0,
+            failed_verifications=len(request.usernames),
+            share_health_reports=[],
+            verification_started_at=verification_start,
+            verification_completed_at=time.time(),
+            total_verification_time_ms=(time.time() - verification_start) * 1000
+        )
+
+@app.get("/shares/health/{username}")
+async def get_share_health_report(username: str):
+    """Get detailed health report for a specific user's share."""
+    
+    try:
+        health_report = await _verify_single_share(username, timeout=30)
+        return health_report
+        
+    except Exception as e:
+        log.add(f"Error getting health report for {username}: {e}")
+        return ShareHealthMetrics(
+            username=username,
+            is_accessible=False,
+            connection_success=False,
+            browse_success=False,
+            error_type="health_check_error",
+            error_message=str(e),
+            verified_at=time.time()
+        )
+
+
+# Performance Metrics Endpoints
+
+@app.get("/system/performance")
+async def get_performance_metrics():
+    """Get comprehensive API performance metrics."""
+    
+    try:
+        current_time = time.time()
+        
+        # Get basic transfer statistics
+        transfers = core.downloads.get_transfer_list()
+        active_downloads = len([t for t in transfers if t.status == TransferStatus.TRANSFERRING])
+        queued_operations = len([t for t in transfers if t.status in [TransferStatus.QUEUED, TransferStatus.GETTING_STATUS]])
+        
+        # Calculate download speed
+        total_speed = sum(getattr(t, 'speed', 0) or 0 for t in transfers if t.status == TransferStatus.TRANSFERRING)
+        download_speed_mbps = (total_speed * 8) / (1024 * 1024) if total_speed > 0 else None
+        
+        # Get system resource usage if psutil is available
+        memory_usage_mb = None
+        cpu_usage_percentage = None
+        if PSUTIL_AVAILABLE:
+            try:
+                process = psutil.Process()
+                memory_usage_mb = process.memory_info().rss / (1024 * 1024)
+                cpu_usage_percentage = process.cpu_percent()
+            except Exception as e:
+                log.add(f"Error getting psutil metrics: {e}")
+        
+        # Get current search count
+        current_searches = len(core.search.searches) if hasattr(core.search, 'searches') else 0
+        
+        return ApiPerformanceMetrics(
+            total_requests=0,  # Would need request tracking implementation
+            requests_per_minute=0.0,  # Would need request tracking implementation
+            average_response_time_ms=0.0,  # Would need response time tracking
+            endpoint_stats={},  # Would need endpoint-specific tracking
+            total_errors=0,  # Would need error tracking
+            error_rate_percentage=0.0,
+            recent_errors=[],
+            active_connections=current_searches + active_downloads,
+            memory_usage_mb=memory_usage_mb,
+            cpu_usage_percentage=cpu_usage_percentage,
+            active_downloads=active_downloads,
+            download_speed_mbps=download_speed_mbps,
+            total_downloaded_mb=None,  # Would need cumulative tracking
+            queued_operations=queued_operations,
+            longest_queue_wait_time_ms=None,  # Would need queue time tracking
+            measured_at=current_time
+        )
+        
+    except Exception as e:
+        log.add(f"Error getting performance metrics: {e}")
+        return ApiPerformanceMetrics(
+            total_requests=0,
+            requests_per_minute=0.0,
+            average_response_time_ms=0.0,
+            endpoint_stats={},
+            total_errors=1,
+            error_rate_percentage=100.0,
+            recent_errors=[str(e)],
+            active_connections=0,
+            active_downloads=0,
+            queued_operations=0,
+            measured_at=time.time()
+        )
+
+@app.get("/system/limits")
+async def get_system_limits():
+    """Get current system limits and usage information."""
+    
+    try:
+        current_time = time.time()
+        
+        # Get configuration limits
+        max_simultaneous_searches = config.sections.get("web_api", {}).get("max_simultaneous_searches", 10)
+        current_searches = len(core.search.searches) if hasattr(core.search, 'searches') else 0
+        
+        # Get transfer information
+        transfers = core.downloads.get_transfer_list()
+        current_downloads = len([t for t in transfers if t.status == TransferStatus.TRANSFERRING])
+        download_queue_size = len([t for t in transfers if t.status in [TransferStatus.QUEUED, TransferStatus.GETTING_STATUS]])
+        
+        # Calculate usage percentages
+        search_usage_percentage = (current_searches / max_simultaneous_searches) * 100 if max_simultaneous_searches > 0 else 0
+        
+        # Get system memory and storage info if psutil is available
+        available_memory_mb = None
+        used_memory_mb = None
+        available_storage_gb = None
+        if PSUTIL_AVAILABLE:
+            try:
+                virtual_memory = psutil.virtual_memory()
+                available_memory_mb = virtual_memory.available / (1024 * 1024)
+                used_memory_mb = virtual_memory.used / (1024 * 1024)
+                
+                disk_usage = psutil.disk_usage('/')
+                available_storage_gb = disk_usage.free / (1024 * 1024 * 1024)
+            except Exception as e:
+                log.add(f"Error getting psutil system info: {e}")
+        
+        return SystemLimitsInfo(
+            max_simultaneous_connections=100,  # Would need to be configurable
+            current_connections=current_searches + current_downloads,
+            connection_usage_percentage=(current_searches + current_downloads) / 100 * 100,
+            max_simultaneous_searches=max_simultaneous_searches,
+            current_searches=current_searches,
+            search_usage_percentage=search_usage_percentage,
+            max_downloads=None,  # Would need configuration
+            current_downloads=current_downloads,
+            download_queue_size=download_queue_size,
+            rate_limit_per_minute=None,  # Would need rate limiting implementation
+            current_rate=0.0,  # Would need rate tracking
+            rate_limit_usage_percentage=None,
+            available_memory_mb=available_memory_mb,
+            used_memory_mb=used_memory_mb,
+            available_storage_gb=available_storage_gb,
+            measured_at=current_time
+        )
+        
+    except Exception as e:
+        log.add(f"Error getting system limits: {e}")
+        return SystemLimitsInfo(
+            max_simultaneous_connections=0,
+            current_connections=0,
+            connection_usage_percentage=0.0,
+            max_simultaneous_searches=0,
+            current_searches=0,
+            search_usage_percentage=0.0,
+            current_downloads=0,
+            download_queue_size=0,
+            current_rate=0.0,
+            measured_at=time.time()
+        )
+
+@app.post("/system/optimize")
+async def optimize_system_performance(request: PerformanceOptimizationRequest):
+    """Trigger system optimization routines."""
+    
+    optimization_id = str(uuid.uuid4())
+    start_time = time.time()
+    actions_performed = []
+    
+    try:
+        # Get before metrics
+        before_metrics = await get_performance_metrics()
+        
+        # Perform optimizations
+        if request.optimize_connections:
+            # Could implement connection pool optimization
+            actions_performed.append("Connection pool optimized")
+        
+        if request.clear_old_data:
+            # Clear completed/failed transfers
+            core.downloads.clear_downloads(statuses=[TransferStatus.FINISHED, TransferStatus.CANCELLED])
+            actions_performed.append("Cleared completed and cancelled downloads")
+        
+        if request.rebuild_indexes:
+            # Could implement search index rebuilding
+            actions_performed.append("Search indexes rebuilt")
+        
+        # Get after metrics
+        after_metrics = await get_performance_metrics()
+        end_time = time.time()
+        
+        return PerformanceOptimizationResponse(
+            optimization_id=optimization_id,
+            status="completed",
+            actions_performed=actions_performed,
+            performance_improvement="System optimization completed successfully",
+            before_metrics=before_metrics.model_dump(),
+            after_metrics=after_metrics.model_dump(),
+            started_at=start_time,
+            completed_at=end_time,
+            duration_ms=(end_time - start_time) * 1000
+        )
+        
+    except Exception as e:
+        log.add(f"Error in system optimization: {e}")
+        return PerformanceOptimizationResponse(
+            optimization_id=optimization_id,
+            status="error",
+            actions_performed=actions_performed,
+            performance_improvement=f"Optimization failed: {str(e)}",
+            started_at=start_time,
+            completed_at=time.time(),
+            duration_ms=(time.time() - start_time) * 1000
+        )

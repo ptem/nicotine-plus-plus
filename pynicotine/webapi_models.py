@@ -201,3 +201,165 @@ class QueueInvestigationResponse(BaseModel):
     # Investigation metadata
     investigation_timestamp: float
     investigation_duration_ms: float
+
+
+# Share Accessibility Verification Models
+
+class ShareVerificationRequest(BaseModel):
+    """Request model for verifying share accessibility."""
+    usernames: List[str]  # List of usernames to verify
+    verify_browse: Optional[bool] = True  # Test if we can browse their shares
+    verify_download: Optional[bool] = False  # Test if we can download from them
+    timeout_seconds: Optional[int] = 30  # Timeout for each verification
+    include_file_sampling: Optional[bool] = False  # Sample files for availability testing
+
+class ShareHealthMetrics(BaseModel):
+    """Detailed health metrics for a user's share."""
+    username: str
+    is_accessible: bool
+    connection_success: bool
+    browse_success: bool
+    download_test_success: Optional[bool] = None
+    
+    # Connection metrics
+    connection_time_ms: Optional[float] = None
+    response_time_ms: Optional[float] = None
+    
+    # Share content metrics
+    total_files: Optional[int] = None
+    total_size: Optional[int] = None
+    accessible_folders: Optional[int] = None
+    
+    # Quality metrics
+    reliability_score: Optional[float] = None  # 0-100 score
+    last_successful_connection: Optional[str] = None
+    consecutive_failures: Optional[int] = 0
+    
+    # Error details
+    error_type: Optional[str] = None  # "timeout", "connection_failed", "browse_failed", etc.
+    error_message: Optional[str] = None
+    
+    # Verification timestamp
+    verified_at: float
+
+class ShareVerificationResponse(BaseModel):
+    """Response model for share verification."""
+    total_users_verified: int
+    successful_verifications: int
+    failed_verifications: int
+    
+    # Detailed results per user
+    share_health_reports: List[ShareHealthMetrics]
+    
+    # Summary statistics
+    average_connection_time_ms: Optional[float] = None
+    average_reliability_score: Optional[float] = None
+    
+    # Verification metadata
+    verification_started_at: float
+    verification_completed_at: float
+    total_verification_time_ms: float
+
+class ShareMonitoringRequest(BaseModel):
+    """Request model for continuous share monitoring."""
+    usernames: List[str]
+    check_interval_minutes: Optional[int] = 60  # How often to check
+    alert_on_failure: Optional[bool] = True
+    max_consecutive_failures: Optional[int] = 3
+    notification_webhook: Optional[str] = None
+
+class ShareMonitoringResponse(BaseModel):
+    """Response model for share monitoring setup."""
+    monitoring_id: str
+    usernames: List[str]
+    status: str  # "active", "paused", "error"
+    next_check_at: Optional[str] = None
+    created_at: float
+
+
+# Performance Metrics Models
+
+class ApiPerformanceMetrics(BaseModel):
+    """Current API performance metrics."""
+    # Request metrics
+    total_requests: int
+    requests_per_minute: float
+    average_response_time_ms: float
+    
+    # Endpoint-specific metrics
+    endpoint_stats: Dict[str, Dict] = {}  # endpoint -> {count, avg_time, errors}
+    
+    # Error metrics
+    total_errors: int
+    error_rate_percentage: float
+    recent_errors: List[str] = []  # Last few error messages
+    
+    # Resource usage
+    active_connections: int
+    memory_usage_mb: Optional[float] = None
+    cpu_usage_percentage: Optional[float] = None
+    
+    # Transfer metrics
+    active_downloads: int
+    download_speed_mbps: Optional[float] = None
+    total_downloaded_mb: Optional[float] = None
+    
+    # Queue metrics
+    queued_operations: int
+    longest_queue_wait_time_ms: Optional[float] = None
+    
+    # Timestamp
+    measured_at: float
+
+class SystemLimitsInfo(BaseModel):
+    """Current system limits and usage."""
+    # Connection limits
+    max_simultaneous_connections: int
+    current_connections: int
+    connection_usage_percentage: float
+    
+    # Search limits
+    max_simultaneous_searches: int
+    current_searches: int
+    search_usage_percentage: float
+    
+    # Download limits
+    max_downloads: Optional[int] = None
+    current_downloads: int
+    download_queue_size: int
+    
+    # Rate limiting info
+    rate_limit_per_minute: Optional[int] = None
+    current_rate: float
+    rate_limit_usage_percentage: Optional[float] = None
+    
+    # Memory and storage
+    available_memory_mb: Optional[float] = None
+    used_memory_mb: Optional[float] = None
+    available_storage_gb: Optional[float] = None
+    
+    # Timestamp
+    measured_at: float
+
+class PerformanceOptimizationRequest(BaseModel):
+    """Request model for performance optimization."""
+    optimize_connections: Optional[bool] = True
+    clear_old_data: Optional[bool] = True
+    rebuild_indexes: Optional[bool] = False
+    max_optimization_time_minutes: Optional[int] = 5
+
+class PerformanceOptimizationResponse(BaseModel):
+    """Response model for performance optimization."""
+    optimization_id: str
+    status: str  # "running", "completed", "error"
+    actions_performed: List[str] = []
+    performance_improvement: Optional[str] = None
+    
+    # Before/after metrics
+    before_metrics: Optional[Dict] = None
+    after_metrics: Optional[Dict] = None
+    
+    # Timing
+    started_at: float
+    completed_at: Optional[float] = None
+    duration_ms: Optional[float] = None
