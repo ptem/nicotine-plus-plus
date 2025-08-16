@@ -667,13 +667,16 @@ def _get_user_status_info(username: str, request_if_unknown: bool = True) -> Use
         try:
             # Watch the user to trigger a status request
             core.users.watch_user(username)
-            
-            # Give a brief moment for the status to be received
+
+            # Check for pulse
             import time
-            time.sleep(0.5)
-            
-            # Check again
+            failure_count = 0
             user_status = core.users.statuses.get(username)
+            while not user_status and failure_count < 3:
+                time.sleep(0.5)
+                failure_count += 1
+                user_status = core.users.statuses.get(username)
+
         except Exception as e:
             log.add(f"Failed to watch user {username} for status: {e}")
     
@@ -792,7 +795,7 @@ async def _verify_single_share(username: str, timeout: int = 30, verify_download
                 is_accessible=False,
                 connection_success=False,
                 browse_success=False,
-                error_type="user_offline",
+                error_type="connection_failure",
                 error_message=f"User {username} is offline or inaccessible.",
                 verified_at=start_time
             )
