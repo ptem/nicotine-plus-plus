@@ -590,7 +590,7 @@ async def browse_user_shares(request: BrowseUserRequest):
         
         return BrowseUserResponse(
             username=request.username,
-            status="success",
+            status="success" if total_files > 0 else "no_files",
             public_folders=public_folders,
             private_folders=private_folders,
             total_files=total_files,
@@ -670,7 +670,7 @@ def _get_user_status_info(username: str, request_if_unknown: bool = True) -> Use
             
             # Give a brief moment for the status to be received
             import time
-            time.sleep(0.1)
+            time.sleep(0.5)
             
             # Check again
             user_status = core.users.statuses.get(username)
@@ -775,18 +775,7 @@ async def _verify_single_share(username: str, timeout: int = 30, verify_download
     try:
         # Test connection and online status
         user_status = _get_user_status_info(username, request_if_unknown=True)
-        connection_success = user_status.is_online
-        
-        if not connection_success:
-            return ShareHealthMetrics(
-                username=username,
-                is_accessible=False,
-                connection_success=False,
-                browse_success=False,
-                error_type="user_offline",
-                error_message=f"User {username} is offline",
-                verified_at=start_time
-            )
+
         
         # Test browse capability
         browse_request = BrowseUserRequest(username=username, timeout=timeout)
@@ -794,6 +783,21 @@ async def _verify_single_share(username: str, timeout: int = 30, verify_download
         
         browse_success = browse_response.status == "success"
         connection_time_ms = (time.time() - start_time) * 1000
+
+        connection_success = user_status.is_online and browse_response.total_files > 0
+
+        if not connection_success:
+            return ShareHealthMetrics(
+                username=username,
+                is_accessible=False,
+                connection_success=False,
+                browse_success=False,
+                error_type="user_offline",
+                error_message=f"User {username} is offline or inaccessible.",
+                verified_at=start_time
+            )
+
+
         
         # Calculate reliability score based on successful operations
         reliability_score = 0.0
