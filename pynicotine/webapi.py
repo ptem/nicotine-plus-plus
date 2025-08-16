@@ -185,7 +185,7 @@ app = FastAPI()
 async def root():
     return {"message": "Hello World"}
 
-@app.get("/search/global")
+@app.post("/search/global")
 async def do_web_api_global_search(search: WebApiSearchModel):
 
     max_simultaneous_searches = config.sections["web_api"]["max_simultaneous_searches"]
@@ -205,7 +205,7 @@ async def do_web_api_global_search(search: WebApiSearchModel):
         return "Too many simultaneous searches. Please, try again later."
 
 
-@app.get("/download")
+@app.post("/download")
 async def download_file(file: FileToDownload):
 
     core.downloads.enqueue_download(file.file_owner, file.file_virtual_path, folder_path=None, size=file.file_size, file_attributes=file.file_attributes)
